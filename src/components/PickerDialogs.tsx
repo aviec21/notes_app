@@ -63,8 +63,8 @@ export function TagsDialog({
   const [draft, setDraft] = useState('')
   const sorted = [...tags].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 
-  function add(event: FormEvent) {
-    event.preventDefault()
+  function add(event?: FormEvent) {
+    event?.preventDefault()
     if (!draft.trim()) return
     onCreate(draft.trim().replace(/^#/, ''))
     setDraft('')
@@ -101,6 +101,7 @@ export function TagsDialog({
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => add()} // typing a tag and tapping away still adds it
             placeholder="New tag"
             aria-label="New tag name"
             maxLength={60}

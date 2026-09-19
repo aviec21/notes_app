@@ -58,6 +58,8 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
     setView(next)
     leaveEditor()
   }
+  // Clicking a tag on a note shows every note carrying it.
+  const openTag = (id: string) => navigate({ kind: 'tag', id })
   const changeQuery = (next: string) => {
     setQuery(next)
     if (next) leaveEditor()
@@ -114,7 +116,7 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
       ) : openId && !split ? (
         <main className="min-w-0 flex-1 px-4 md:px-6">
           <Suspense fallback={editorLoading}>
-            <NoteEditor key={openId} id={openId} onClose={closeEditor} />
+            <NoteEditor key={openId} id={openId} onClose={closeEditor} onOpenTag={openTag} />
           </Suspense>
         </main>
       ) : (
@@ -159,7 +161,7 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
               style={{ borderLeft: '1px solid var(--border)' }}
             >
               <Suspense fallback={editorLoading}>
-                <NoteEditor key={openId} id={openId} onClose={closeEditor} embedded />
+                <NoteEditor key={openId} id={openId} onClose={closeEditor} embedded onOpenTag={openTag} />
               </Suspense>
             </section>
           )}

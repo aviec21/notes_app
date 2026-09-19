@@ -215,9 +215,10 @@ function Fields({
 }
 
 /** Folder, pin and tags for the open note. */
-function NoteMeta({ note }: { note: NoteRecord }) {
+function NoteMeta({ note, onOpenTag }: { note: NoteRecord; onOpenTag?: (tagId: string) => void }) {
   const data = useLibraryData()
   const [draft, setDraft] = useState('')
+  const adding = useRef<Promise<void>>(Promise.resolve())
   const listId = useId()
   if (!data) return null
 
@@ -226,12 +227,21 @@ function NoteMeta({ note }: { note: NoteRecord }) {
   const noteTags = data.tags.filter((t) => note.tagIds.includes(t.id))
   const unused = data.tags.filter((t) => !note.tagIds.includes(t.id))
 
+  /**
+   * Adds a tag. Leaving the field and pressing Add can both fire for one word, so the
+   * calls are queued and each one re-reads the note's tags; the second then finds nothing
+   * left to do instead of creating a duplicate.
+   */
   async function addTag(raw: string) {
     const name = raw.trim().replace(/^#/, '')
     if (!name) return
-    const id = await repo.createTag(name)
-    if (!note.tagIds.includes(id)) await repo.setNoteTags(note.id, [...note.tagIds, id])
     setDraft('')
+    adding.current = adding.current.then(async () => {
+      const id = await repo.createTag(name)
+      const current = await db.notes.get(note.id)
+      if (current && !current.tagIds.includes(id)) await repo.setNoteTags(note.id, [...current.tagIds, id])
+    })
+    await adding.current
   }
 
   return (
@@ -264,8 +274,16 @@ function NoteMeta({ note }: { note: NoteRecord }) {
       </button>
 
       {noteTags.map((tag) => (
-        <span key={tag.id} className="flex items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5" style={{ border: '1px solid var(--border)' }}>
-          #{tag.name}
+        <span key={tag.id} className="flex items-center gap-1 rounded-full py-0.5 pr-1 pl-1" style={{ border: '1px solid var(--border)' }}>
+          <button
+            type="button"
+            onClick={() => onOpenTag?.(tag.id)}
+            disabled={!onOpenTag}
+            title={onOpenTag ? `Show all notes tagged #${tag.name}` : undefined}
+            className="rounded-full px-1.5 disabled:cursor-default"
+          >
+            #{tag.name}
+          </button>
           <button
             type="button"
             onClick={() => void repo.setNoteTags(note.id, note.tagIds.filter((t) => t !== tag.id))}
@@ -276,22 +294,39 @@ function NoteMeta({ note }: { note: NoteRecord }) {
           </button>
         </span>
       ))}
-      <input
-        value={draft}
-        list={listId}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ',') {
-            e.preventDefault()
-            void addTag(draft)
-          }
+      {/* A form so the phone keyboard's "Go" adds the tag; leaving the field adds it too,
+          so a typed tag is never silently lost. */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          void addTag(draft)
         }}
-        placeholder="+ Add tag"
-        aria-label="Add tag"
-        maxLength={60}
-        className="w-28 rounded-lg bg-transparent px-2 py-1.5 outline-none focus:ring-2"
-        style={{ border: '1px dashed var(--border)' }}
-      />
+        className="flex items-center gap-1"
+      >
+        <input
+          value={draft}
+          list={listId}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === ',') {
+              e.preventDefault()
+              void addTag(draft)
+            }
+          }}
+          onBlur={() => void addTag(draft)}
+          placeholder="+ Add tag"
+          aria-label="Add tag"
+          maxLength={60}
+          enterKeyHint="done"
+          className="w-28 rounded-lg bg-transparent px-2 py-1.5 outline-none focus:ring-2"
+          style={{ border: '1px dashed var(--border)' }}
+        />
+        {draft.trim() && (
+          <button type="submit" aria-label={`Add tag ${draft.trim()}`} className="rounded-lg px-2 py-1.5" style={{ background: 'var(--accent)', color: 'var(--bg)' }}>
+            Add
+          </button>
+        )}
+      </form>
       <datalist id={listId}>
         {unused.map((t) => (
           <option key={t.id} value={t.name} />
@@ -305,7 +340,18 @@ function NoteMeta({ note }: { note: NoteRecord }) {
  * Edits one note. Full screen, it takes part in history so the device's Back button
  * returns to the list. `embedded` (desktop editor mode) shows it as a side panel instead.
  */
-export default function NoteEditor({ id, onClose, embedded = false }: { id: string; onClose: () => void; embedded?: boolean }) {
+export default function NoteEditor({
+  id,
+  onClose,
+  embedded = false,
+  onOpenTag,
+}: {
+  id: string
+  onClose: () => void
+  embedded?: boolean
+  /** Opens the tag's page (clicking a tag chip on the note). */
+  onOpenTag?: (tagId: string) => void
+}) {
   const dialogs = useDialogs()
   // undefined while loading, null if the note no longer exists.
   const note = useLiveQuery(async () => (await db.notes.get(id)) ?? null, [id])
@@ -378,7 +424,7 @@ export default function NoteEditor({ id, onClose, embedded = false }: { id: stri
         </div>
         {isDesktop && <div ref={setToolbarSlot} className="-mx-1 pb-1" />}
       </header>
-      {note?.id === id && <NoteMeta note={note} />}
+      {note?.id === id && <NoteMeta note={note} onOpenTag={onOpenTag} />}
       {note?.id === id && <Fields key={id} note={note} flushRef={flushRef} toolbarSlot={toolbarSlot} isDesktop={isDesktop} />}
     </div>
   )

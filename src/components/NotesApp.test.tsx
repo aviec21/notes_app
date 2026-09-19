@@ -199,6 +199,30 @@ describe('desktop layout', () => {
     expect(screen.queryByRole('button', { name: /Groceries/ })).toBeNull() // list replaced
   })
 
+  it('keeps a tag added inside a note, and filters by it when the tag is clicked', async () => {
+    const user = userEvent.setup()
+    render(app())
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    const panel = await screen.findByRole('region', { name: 'Open note' })
+
+    await user.type(await within(panel).findByRole('combobox', { name: 'Add tag' }), 'finance{Enter}')
+    expect(await within(panel).findByText('#finance')).toBeTruthy()
+
+    // It survives closing the note.
+    await user.click(within(panel).getByRole('button', { name: /Close/ }))
+    const sidebar = screen.getByRole('navigation', { name: 'Library' })
+    const tag = await within(sidebar).findByRole('button', { name: /^finance/ })
+
+    await user.click(tag)
+    const list = screen.getByRole('main')
+    expect(await within(list).findByText('Groceries')).toBeTruthy()
+    expect(within(list).queryByText('Quarterly plan')).toBeNull() // only tagged notes
+
+    const note = (await db.notes.toArray()).find((n) => n.title === 'Groceries')
+    expect(note?.tagIds).toHaveLength(2) // the seeded "urgent" plus the new one
+
+  })
+
   it('warns about the default PIN with a way to change it', async () => {
     render(app(true))
     expect(await screen.findByText(/still using the default PIN/)).toBeTruthy()

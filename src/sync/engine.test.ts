@@ -176,6 +176,52 @@ describe('syncing between devices', () => {
     }
   })
 
+  it('carries tags, and which notes have them, to the other device', async () => {
+    const server = new TestServer()
+    const a = device(server)
+    const b = device(server)
+    const id = await a.repo.createNote()
+    await a.repo.setNoteText(id, 'Budget', 'numbers')
+    const tagId = await a.repo.createTag('finance')
+    await a.repo.tagNotes([id], tagId, true)
+
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+
+    expect(await b.db.tags.toArray()).toMatchObject([{ id: tagId, name: 'finance' }])
+    expect((await b.db.notes.get(id))?.tagIds).toEqual([tagId])
+
+    // Renaming on one device, untagging on the other, both arrive.
+    await b.repo.renameTag(tagId, 'money')
+    await a.repo.tagNotes([id], tagId, false)
+    await b.engine.syncNow()
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+
+    expect((await a.db.tags.get(tagId))?.name).toBe('money')
+    expect((await b.db.notes.get(id))?.tagIds).toEqual([])
+  })
+
+  it('keeps a tag that was added while offline', async () => {
+    const server = new TestServer()
+    const a = device(server)
+    const b = device(server)
+    const id = await a.repo.createNote()
+    await a.repo.setNoteText(id, 'Trip', 'plans')
+    await a.engine.syncNow()
+
+    a.state.online = false
+    const tagId = await a.repo.createTag('travel')
+    await a.repo.tagNotes([id], tagId, true)
+    await a.engine.syncNow() // fails: offline
+
+    a.state.online = true
+    await a.engine.syncNow()
+    await b.engine.syncNow()
+    expect((await b.db.notes.get(id))?.tagIds).toEqual([tagId])
+    expect((await b.db.tags.get(tagId))?.name).toBe('travel')
+  })
+
   it('spreads a permanent delete to the other device', async () => {
     const server = new TestServer()
     const a = device(server)

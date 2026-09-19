@@ -249,6 +249,56 @@ describe('note editor', () => {
     expect(stored.noteId).toBe(noteId)
   })
 
+  it('keeps a tag that was typed and then left without pressing Enter', async () => {
+    const user = userEvent.setup()
+    render(editorView())
+    const field = await screen.findByRole('combobox', { name: 'Add tag' })
+    await user.type(field, 'research')
+    await user.tab() // moving on used to throw the tag away
+
+    await waitFor(async () => expect((await saved())?.tagIds).toHaveLength(1))
+    expect(await screen.findByText('#research')).toBeTruthy()
+    expect((field as HTMLInputElement).value).toBe('')
+  })
+
+  it('adds a tag with the Add button', async () => {
+    const user = userEvent.setup()
+    render(editorView())
+    await user.type(await screen.findByRole('combobox', { name: 'Add tag' }), 'budget')
+    await user.click(screen.getByRole('button', { name: 'Add tag budget' }))
+    await waitFor(async () => expect((await saved())?.tagIds).toHaveLength(1))
+    expect(await db.tags.count()).toBe(1)
+  })
+
+  it('opens the tag page when its chip on the note is clicked', async () => {
+    const onOpenTag = vi.fn()
+    const user = userEvent.setup()
+    const tagId = await repo.createTag('work')
+    await repo.setNoteTags(noteId, [tagId])
+    render(
+      <DialogProvider>
+        <NoteEditor id={noteId} onClose={() => {}} onOpenTag={onOpenTag} />
+      </DialogProvider>,
+    )
+    await user.click(await screen.findByRole('button', { name: '#work' }))
+    expect(onOpenTag).toHaveBeenCalledWith(tagId)
+  })
+
+  it('does not create a tag from blank or repeated text', async () => {
+    const user = userEvent.setup()
+    render(editorView())
+    const field = await screen.findByRole('combobox', { name: 'Add tag' })
+    await user.type(field, '   ')
+    await user.tab()
+    expect(await db.tags.count()).toBe(0)
+
+    await user.type(field, 'same{Enter}')
+    await waitFor(async () => expect(await db.tags.count()).toBe(1))
+    await user.type(field, 'SAME{Enter}') // the same name in different letters
+    await waitFor(async () => expect((await saved())?.tagIds).toHaveLength(1))
+    expect(await db.tags.count()).toBe(1)
+  })
+
   it('shows a rename made elsewhere while the note is open', async () => {
     render(editorView())
     await tiptap()
