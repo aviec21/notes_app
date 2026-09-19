@@ -13,8 +13,10 @@ export async function GET(request: Request) {
     return json({ error: 'unauthorized' }, 401)
   }
   try {
-    const purged = await (await getStore()).purgeExpired(Date.now() - BIN_RETENTION_DAYS * DAY_MS)
-    return json({ purged })
+    const store = await getStore()
+    const purged = await store.purgeExpired(Date.now() - BIN_RETENTION_DAYS * DAY_MS)
+    const images = await store.purgeOrphanImages()
+    return json({ purged, images })
   } catch (err) {
     console.error('Bin purge failed:', err instanceof Error ? err.message : err)
     return json({ error: 'server' }, 500)

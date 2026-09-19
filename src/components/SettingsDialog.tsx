@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { usePendingCount } from '../hooks'
+import { downloadBlob, exportAllNotes } from '../lib/export'
 import { useTheme, type Theme } from '../theme'
 import ChangePin from './ChangePin'
 import { useDialogs } from './ui/Dialogs'
@@ -9,6 +11,49 @@ const THEMES: { value: Theme; label: string }[] = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ]
+
+/** Downloads every note as Markdown files in a .zip, with the pictures they use. */
+function ExportSection() {
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  async function exportAll() {
+    setBusy(true)
+    setMessage(null)
+    try {
+      const result = await exportAllNotes()
+      downloadBlob(result.blob, result.filename)
+      setMessage(
+        `Downloaded ${result.filename} — ${result.notes} ${result.notes === 1 ? 'note' : 'notes'}, ${result.images} ${result.images === 1 ? 'picture' : 'pictures'}.` +
+          (result.missingImages > 0
+            ? ` ${result.missingImages} ${result.missingImages === 1 ? 'picture is' : 'pictures are'} not on this device and could not be included.`
+            : ''),
+      )
+    } catch (err) {
+      console.error('Export failed:', err)
+      setMessage('The export could not be created. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="text-sm font-medium">Export</h3>
+      <p className="text-sm" style={{ color: 'var(--muted)' }}>
+        Save a copy of everything as Markdown files (.zip), arranged in your folders, with pictures. Works offline.
+      </p>
+      <button type="button" onClick={() => void exportAll()} disabled={busy} className={`${buttonStyles.base} self-start`} style={buttonStyles.plain}>
+        {busy ? 'Preparing…' : 'Export all notes'}
+      </button>
+      {message && (
+        <p role="status" className="text-sm" style={{ color: 'var(--muted)' }}>
+          {message}
+        </p>
+      )}
+    </section>
+  )
+}
 
 export default function SettingsDialog({
   open,
@@ -68,6 +113,8 @@ export default function SettingsDialog({
             ))}
           </div>
         </section>
+
+        <ExportSection />
 
         <ChangePin onChanged={onPinChanged} />
 

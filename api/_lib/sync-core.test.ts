@@ -16,10 +16,17 @@ async function memoryStore(): Promise<Store> {
   return new MemoryStore()
 }
 
-async function postgresStore(): Promise<Store> {
+type Query = (text: string, params?: unknown[]) => Promise<Record<string, unknown>[]>
+
+async function postgres(): Promise<{ store: Store; query: Query }> {
   const pg = new PGlite()
-  await runMigrations(async (text, params) => (await pg.query(text, params)).rows as Record<string, unknown>[])
-  return new PgStore(async (text, params) => (await pg.query(text, params)).rows as Record<string, unknown>[])
+  const query: Query = async (text, params) => (await pg.query(text, params)).rows as Record<string, unknown>[]
+  await runMigrations(query)
+  return { store: new PgStore(query), query }
+}
+
+async function postgresStore(): Promise<Store> {
+  return (await postgres()).store
 }
 
 function op(entity: EntityName, id: string, fields: Record<string, unknown>, baseRev: number | null): SyncOp {
@@ -221,5 +228,43 @@ describe.each([
     const rev = applied(await processOp(store, op('note', uuid(), noteFields('x'), null)))
     const page = await pullChanges(store, rev, 100)
     expect(page).toMatchObject({ cursor: rev, hasMore: false, records: [], purged: [] })
+  })
+})
+
+describe('stored pictures (real Postgres)', () => {
+  const addImage = (query: Query, id: string, ageDays: number) =>
+    query(
+      `INSERT INTO images (id, note_id, mime, size, data, created_at)
+       VALUES ($1::uuid, NULL, 'image/webp', 3, '\\x010203'::bytea, now() - make_interval(days => $2::int))`,
+      [id, ageDays],
+    )
+
+  const imageIds = async (query: Query) => (await query(`SELECT id FROM images ORDER BY created_at`)).map((r) => String(r.id))
+
+  it('deletes only old pictures that no note uses any more', async () => {
+    const { store, query } = await postgres()
+    const [used, orphan, fresh] = [uuid(), uuid(), uuid()]
+    await addImage(query, used, 5)
+    await addImage(query, orphan, 5)
+    await addImage(query, fresh, 0) // uploaded just now; its note may still be on its way
+
+    const noteId = uuid()
+    applied(
+      await processOp(store, {
+        opId: uuid(),
+        entity: 'note',
+        id: noteId,
+        kind: 'upsert',
+        baseRev: null,
+        fields: {
+          title: 'With picture',
+          contentText: '',
+          content: { type: 'doc', content: [{ type: 'noteImage', attrs: { imageId: used } }] },
+        },
+      }),
+    )
+
+    expect(await store.purgeOrphanImages()).toBe(1)
+    expect((await imageIds(query)).sort()).toEqual([used, fresh].sort())
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 export type Theme = 'system' | 'light' | 'dark'
 
@@ -19,6 +19,31 @@ function apply(theme: Theme) {
   const root = document.documentElement
   if (theme === 'system') root.removeAttribute('data-theme')
   else root.setAttribute('data-theme', theme)
+}
+
+function darkNow(): boolean {
+  const forced = document.documentElement.getAttribute('data-theme')
+  if (forced === 'dark') return true
+  if (forced === 'light') return false
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
+}
+
+/** Whether dark colours are showing right now (for canvas drawing, which CSS cannot reach). */
+export function useIsDark(): boolean {
+  const [dark, setDark] = useState(darkNow)
+  useEffect(() => {
+    const update = () => setDark(darkNow())
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)')
+    media?.addEventListener('change', update)
+    // The theme choice is an attribute on <html>, so watch it as well as the OS setting.
+    const observer = new MutationObserver(update)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => {
+      media?.removeEventListener('change', update)
+      observer.disconnect()
+    }
+  }, [])
+  return dark
 }
 
 export function useTheme() {

@@ -1,8 +1,9 @@
 import { useEditorState, type Editor } from '@tiptap/react'
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import EmojiPicker from './EmojiPicker'
 import { FONT_SIZES, FONTS, HIGHLIGHTS, TEXT_COLORS } from './extensions'
 
-type Menu = 'style' | 'font' | 'size' | 'color' | 'highlight'
+type Menu = 'style' | 'font' | 'size' | 'color' | 'highlight' | 'insert' | 'emoji' | 'table'
 
 const svg = (children: ReactNode) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -16,6 +17,21 @@ const ICONS = {
   numbers: svg(<path d="M10 6h11M10 12h11M10 18h11M4 4v4M3 18h3l-3 3h3M3.5 12.5 5 11v3" />),
   checklist: svg(<path d="m3 6 2 2 3-3M3 16l2 2 3-3M11 7h10M11 17h10" />),
   clear: svg(<path d="M4 7V5h11v2M9.5 5l-2 14M5 19h6M15 14l6 6M21 14l-6 6" />),
+  plus: svg(<path d="M12 5v14M5 12h14" />),
+  table: svg(
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 10h18M9 10v10M15 10v10" />
+    </>,
+  ),
+  image: svg(
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="m4 17 5-4 4 3 3-2 4 3" />
+    </>,
+  ),
+  chart: svg(<path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />),
 }
 
 function Button({
@@ -93,7 +109,16 @@ function Swatch({ color, label, selected, onPick }: { color: string | null; labe
  * Formatting controls for the note. `placement` says where the bar sits so its menus
  * open towards the page: below it on desktop, above it on a phone (bar at the bottom).
  */
-export default function Toolbar({ editor, placement }: { editor: Editor; placement: 'top' | 'bottom' }) {
+export default function Toolbar({
+  editor,
+  placement,
+  onInsertImage,
+}: {
+  editor: Editor
+  placement: 'top' | 'bottom'
+  /** Opens the device's file chooser; the note owns the picture pipeline. */
+  onInsertImage: () => void
+}) {
   const [menu, setMenu] = useState<Menu | null>(null)
   const wrapper = useRef<HTMLDivElement>(null)
 
@@ -114,6 +139,7 @@ export default function Toolbar({ editor, placement }: { editor: Editor; placeme
       size: (e.getAttributes('textStyle').fontSize as string | undefined) ?? null,
       color: (e.getAttributes('textStyle').color as string | undefined) ?? null,
       highlight: (e.getAttributes('highlight').color as string | undefined) ?? null,
+      inTable: e.isActive('table'),
       canUndo: e.can().undo(),
       canRedo: e.can().redo(),
     }),
@@ -169,7 +195,59 @@ export default function Toolbar({ editor, placement }: { editor: Editor; placeme
   )
 
   let panel: ReactNode = null
-  if (menu === 'style') {
+  if (menu === 'insert') {
+    // `keepOpen` is for Emoji, which swaps this panel for the picker instead of closing it.
+    const item = (label: string, hint: string, icon: ReactNode, run: () => void, keepOpen = false) => (
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => (keepOpen ? run() : pick(run))}
+        className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm"
+        style={{ border: '1px solid var(--border)' }}
+      >
+        {icon}
+        <span>
+          {label}
+          <span className="block text-xs" style={{ color: 'var(--muted)' }}>
+            {hint}
+          </span>
+        </span>
+      </button>
+    )
+    panel = (
+      <div className="flex flex-col gap-1.5">
+        {item('Table', '3 × 3 with a header row', ICONS.table, () =>
+          chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+        )}
+        {item('Picture', 'from this device', ICONS.image, onInsertImage)}
+        {item('Chart', 'bar, line or pie — stays editable', ICONS.chart, () => chain().insertChart().run())}
+        {item('Emoji', 'search and insert', <span className="text-lg">🙂</span>, () => setMenu('emoji'), true)}
+      </div>
+    )
+  } else if (menu === 'emoji') {
+    panel = <EmojiPicker onPick={(emoji) => chain().insertContent(emoji).run()} />
+  } else if (menu === 'table') {
+    const action = (label: string, run: () => void, danger = false) => (
+      <Option selected={false} onPick={() => pick(run)} style={danger ? { color: 'var(--danger)' } : undefined}>
+        {label}
+      </Option>
+    )
+    panel = (
+      <div className="grid grid-cols-2 gap-1.5">
+        {action('Row above', () => chain().addRowBefore().run())}
+        {action('Row below', () => chain().addRowAfter().run())}
+        {action('Column left', () => chain().addColumnBefore().run())}
+        {action('Column right', () => chain().addColumnAfter().run())}
+        {action('Merge cells', () => chain().mergeCells().run())}
+        {action('Split cell', () => chain().splitCell().run())}
+        {action('Toggle header row', () => chain().toggleHeaderRow().run())}
+        {action('Toggle header column', () => chain().toggleHeaderColumn().run())}
+        {action('Delete row', () => chain().deleteRow().run(), true)}
+        {action('Delete column', () => chain().deleteColumn().run(), true)}
+        {action('Delete table', () => chain().deleteTable().run(), true)}
+      </div>
+    )
+  } else if (menu === 'style') {
     panel = (
       <div className="flex flex-col gap-1.5">
         <Option selected={!s.heading} onPick={() => pick(() => chain().setParagraph().run())}>Normal text</Option>
@@ -298,6 +376,9 @@ export default function Toolbar({ editor, placement }: { editor: Editor; placeme
         <Button label="Checklist" shortcut="Ctrl+Shift+9" active={s.tasks} onClick={() => chain().toggleTaskList().run()}>
           {ICONS.checklist}
         </Button>
+        <Divider />
+        {menuButton('insert', 'Insert', ICONS.plus)}
+        {s.inTable && menuButton('table', 'Table options', ICONS.table)}
         <Divider />
         <Button label="Clear formatting" onClick={() => chain().unsetAllMarks().clearNodes().run()}>
           {ICONS.clear}

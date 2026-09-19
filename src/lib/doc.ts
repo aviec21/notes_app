@@ -14,18 +14,23 @@ interface DocNode {
   type?: string
   text?: string
   content?: unknown[]
+  attrs?: { title?: string; labels?: string[]; alt?: string }
 }
 
 // Nodes whose children are separate lines / cells rather than inline text.
 const LINE_CONTAINERS = new Set([
   'doc', 'bulletList', 'orderedList', 'taskList', 'listItem', 'taskItem', 'blockquote', 'table',
+  'tableCell', 'tableHeader',
 ])
 
 function walk(node: unknown): string {
   if (!node || typeof node !== 'object') return ''
-  const { type, text, content } = node as DocNode
+  const { type, text, content, attrs } = node as DocNode
   if (type === 'text') return text ?? ''
   if (type === 'hardBreak') return '\n'
+  // Blocks with no text of their own still carry words worth finding in a search.
+  if (type === 'chart') return [attrs?.title, ...(attrs?.labels ?? [])].filter(Boolean).join(' ')
+  if (type === 'noteImage') return attrs?.alt ?? ''
   const children = (content ?? []).map(walk)
   if (type === 'tableRow') return children.join('\t')
   return children.join(type && LINE_CONTAINERS.has(type) ? '\n' : '')

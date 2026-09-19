@@ -8,6 +8,12 @@ import { db, repo } from '../sync/runtime'
 import NoteEditor from './NoteEditor'
 import { DialogProvider } from './ui/Dialogs'
 
+// jsdom has no canvas or image decoding, so pictures are stored exactly as they arrive.
+vi.mock('../images', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../images')>()),
+  compressImage: async (file: Blob) => ({ blob: file, mime: file.type || 'image/webp' }),
+}))
+
 function setScreen(desktop: boolean) {
   window.matchMedia = ((query: string) => ({
     matches: desktop && query.includes('min-width'),
@@ -161,6 +167,86 @@ describe('note editor', () => {
     await waitFor(async () => expect((await saved())?.tagIds).toHaveLength(1))
     await user.click(await screen.findByRole('button', { name: 'Remove tag ideas' }))
     await waitFor(async () => expect((await saved())?.tagIds).toEqual([]))
+  })
+
+  it('inserts a table and offers its row and column actions', async () => {
+    const user = userEvent.setup()
+    render(editorView())
+    const editor = await tiptap()
+
+    await user.click(screen.getByRole('button', { name: 'Insert' }))
+    await user.click(screen.getByRole('button', { name: /Table/ }))
+    await waitFor(() => expect(editor.isActive('table')).toBe(true))
+    await waitFor(async () => expect(JSON.stringify((await saved())?.content)).toContain('"type":"table"'))
+
+    // The table menu only appears while the cursor is inside a table.
+    await user.click(await screen.findByRole('button', { name: 'Table options' }))
+    await user.click(screen.getByRole('button', { name: 'Row below' }))
+    await waitFor(async () => {
+      const rows = JSON.stringify((await saved())?.content).match(/"type":"tableRow"/g) ?? []
+      expect(rows).toHaveLength(4)
+    })
+  })
+
+  it('inserts a chart and saves changes made in its editor', async () => {
+    const user = userEvent.setup()
+    render(editorView())
+    await tiptap()
+
+    await user.click(screen.getByRole('button', { name: 'Insert' }))
+    await user.click(screen.getByRole('button', { name: /Chart/ }))
+    await waitFor(async () => expect(JSON.stringify((await saved())?.content)).toContain('"type":"chart"'))
+
+    await user.click(await screen.findByRole('button', { name: 'Edit chart' }))
+    const dialog = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('dialog[open]')
+      if (!el) throw new Error('no dialog')
+      return el
+    })
+    const title = within(dialog).getByRole('textbox', { name: 'Chart title', hidden: true })
+    await user.clear(title)
+    await user.type(title, 'Rainfall')
+    await user.click(within(dialog).getByRole('button', { name: 'Line', hidden: true }))
+    await user.click(within(dialog).getByRole('button', { name: 'Save chart', hidden: true }))
+
+    await waitFor(async () => {
+      const note = await saved()
+      expect(JSON.stringify(note?.content)).toContain('"title":"Rainfall"')
+      expect(JSON.stringify(note?.content)).toContain('"chartType":"line"')
+      // A chart's words are searchable even though it holds no paragraph text.
+      expect(note?.contentText).toContain('Rainfall')
+    })
+  })
+
+  it('inserts an emoji from the picker', async () => {
+    const user = userEvent.setup()
+    render(editorView())
+    const editor = await tiptap()
+    editor.commands.focus('end')
+
+    await user.click(screen.getByRole('button', { name: 'Insert' }))
+    await user.click(screen.getByRole('button', { name: /Emoji/ }))
+    await user.type(await screen.findByRole('searchbox', { name: 'Search emoji' }), 'grinning face')
+    await user.click(await screen.findByRole('button', { name: 'grinning face' }))
+    await waitFor(async () => expect((await saved())?.contentText).toContain('😀'))
+  })
+
+  it('adds a pasted picture to the note and keeps it on this device', async () => {
+    render(editorView())
+    const editor = await tiptap()
+    const before = await db.images.count()
+
+    const file = new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' })
+    const body = editor.view.dom
+    const event = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData: unknown }
+    Object.defineProperty(event, 'clipboardData', { value: { files: [file], getData: () => '' } })
+    body.dispatchEvent(event)
+
+    await waitFor(async () => expect(await db.images.count()).toBe(before + 1))
+    await waitFor(async () => expect(JSON.stringify((await saved())?.content)).toContain('"type":"noteImage"'))
+    const stored = (await db.images.toArray())[0]
+    expect(stored.uploaded).toBe(0) // queued for upload on the next sync
+    expect(stored.noteId).toBe(noteId)
   })
 
   it('shows a rename made elsewhere while the note is open', async () => {

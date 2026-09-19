@@ -7,6 +7,7 @@ import { noteExtensions } from '../editor/extensions'
 import Toolbar from '../editor/Toolbar'
 import { useHotkeys } from '../hotkeys'
 import { useIsDesktop, useLibraryData } from '../hooks'
+import { compressImage, storeImage } from '../images'
 import { effectiveFolderId, liveFolders } from '../lib/library'
 import { db, repo } from '../sync/runtime'
 import SyncStatus from './SyncStatus'
@@ -37,6 +38,7 @@ function Fields({
   isDesktop: boolean
 }) {
   const [title, setTitle] = useState(note.title)
+  const [imageError, setImageError] = useState<string | null>(null)
   const latest = useRef({ title: note.title, content: note.content })
   const dirty = useRef(false) // typed, but not saved yet
   const timer = useRef<number | undefined>(undefined)
@@ -59,18 +61,54 @@ function Fields({
     scheduleRef.current = scheduleSave
   }, [scheduleSave])
 
+  const fileInput = useRef<HTMLInputElement>(null)
+  const addImages = useRef(async (_files: FileList | File[]) => {})
+
   const editor = useEditor({
     extensions: noteExtensions,
     content: note.content as JSONContent,
     shouldRerenderOnTransaction: false,
     editorProps: {
       attributes: { class: 'note-content', 'aria-label': 'Note text', role: 'textbox', 'aria-multiline': 'true' },
+      // Pictures pasted or dragged in are stored with the note, never linked from elsewhere.
+      handlePaste: (_view, event) => {
+        const files = [...(event.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+        if (files.length === 0) return false
+        event.preventDefault()
+        void addImages.current(files)
+        return true
+      },
+      handleDrop: (_view, event) => {
+        const dropped = event instanceof DragEvent ? event.dataTransfer?.files : undefined
+        const files = [...(dropped ?? [])].filter((f) => f.type.startsWith('image/'))
+        if (files.length === 0) return false
+        event.preventDefault()
+        void addImages.current(files)
+        return true
+      },
     },
     onUpdate: ({ editor: e }) => {
       latest.current.content = e.getJSON() as DocJson
       scheduleRef.current()
     },
   })
+
+  addImages.current = async (files) => {
+    for (const file of [...files].slice(0, 10)) {
+      try {
+        const { blob, mime } = await compressImage(file)
+        const imageId = await storeImage(note.id, blob, mime)
+        editor?.chain().focus().insertContent({ type: 'noteImage', attrs: { imageId, alt: file.name, width: 100 } }).run()
+      } catch (err) {
+        const tooBig = err instanceof Error && err.message === 'too-large'
+        setImageError(
+          tooBig
+            ? 'That picture is too large (the limit is about 3 MB after shrinking).'
+            : 'That picture could not be added.',
+        )
+      }
+    }
+  }
 
   useEffect(() => {
     flushRef.current = save
@@ -116,7 +154,9 @@ function Fields({
     scheduleSave()
   }
 
-  const toolbar = editor ? <Toolbar editor={editor} placement={isDesktop ? 'top' : 'bottom'} /> : null
+  const toolbar = editor ? (
+    <Toolbar editor={editor} placement={isDesktop ? 'top' : 'bottom'} onInsertImage={() => fileInput.current?.click()} />
+  ) : null
 
   return (
     <>
@@ -135,6 +175,27 @@ function Fields({
         className="w-full bg-transparent text-2xl font-semibold outline-none"
       />
       <EditorContent editor={editor} className="min-h-[50vh]" />
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        aria-label="Add pictures"
+        onChange={(e) => {
+          setImageError(null)
+          if (e.target.files) void addImages.current(e.target.files)
+          e.target.value = '' // so the same file can be chosen again
+        }}
+      />
+      {imageError && (
+        <p role="alert" className="rounded-lg px-3 py-2 text-sm" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          {imageError}{' '}
+          <button type="button" onClick={() => setImageError(null)} className="underline">
+            Dismiss
+          </button>
+        </p>
+      )}
       {isDesktop
         ? toolbarSlot && createPortal(toolbar, toolbarSlot)
         : toolbar && (

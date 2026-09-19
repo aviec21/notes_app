@@ -163,6 +163,34 @@ export const HELP_TOPICS: HelpTopic[] = [
     keywords: 'checkbox todo task tick',
   },
   {
+    id: 'tables',
+    section: 'Formatting',
+    title: 'Tables',
+    body: 'Insert → Table adds a 3 × 3 table with a header row. With the cursor inside it, a “Table options” button appears for adding or deleting rows and columns, merging or splitting cells, and deleting the table. Tab moves to the next cell. On desktop you can drag a column edge to resize it; on a phone a wide table scrolls sideways inside the note.',
+    keywords: 'table grid rows columns cells merge',
+  },
+  {
+    id: 'images',
+    section: 'Formatting',
+    title: 'Pictures',
+    body: 'Insert → Picture, or simply paste or drag a picture into the note. Pictures are shrunk automatically, stored in your own database behind your PIN, and never linked from another website. Select a picture to set its width to 25%, 50% or 100%. Pictures added offline upload as soon as you are back online. The limit is about 3 MB per picture after shrinking.',
+    keywords: 'image photo picture paste drag upload screenshot',
+  },
+  {
+    id: 'charts',
+    section: 'Formatting',
+    title: 'Charts',
+    body: 'Insert → Chart adds a bar, line or pie chart. Choose “Edit chart” to change its type, title and numbers in a small table; the data stays editable, so it is never just a picture. Every chart also shows its numbers under “Data table”. Colours are chosen to stay distinguishable in both themes and for colour-blind readers, and up to six series are supported.',
+    keywords: 'chart graph bar line pie data plot',
+  },
+  {
+    id: 'emoji',
+    section: 'Formatting',
+    title: 'Emoji',
+    body: 'Insert → Emoji opens a picker you can search (for example “heart” or “party”); your recent ones are kept at the top. The emoji list is part of the app, so it works offline. Your phone’s own emoji keyboard works too.',
+    keywords: 'emoji smiley icon symbol',
+  },
+  {
     id: 'clear-format',
     section: 'Formatting',
     title: 'Undo, redo and clear formatting',
@@ -201,6 +229,13 @@ export const HELP_TOPICS: HelpTopic[] = [
   },
 
   // --- Settings -----------------------------------------------------------------------
+  {
+    id: 'export',
+    section: 'Settings',
+    title: 'Export all notes (backup)',
+    body: 'Open Settings and choose “Export all notes”. You get a .zip holding one Markdown (.md) file per note, arranged in your folders, plus an images folder and an index. Notes in the recycle bin are included in their own folder. It is built on this device, so it also works offline, apart from pictures that have not been downloaded yet. Formatting that Markdown has no word for (colour, font and size) is not kept.',
+    keywords: 'backup download export markdown md zip save copy',
+  },
   {
     id: 'theme',
     section: 'Settings',

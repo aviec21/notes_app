@@ -22,6 +22,8 @@ export interface SyncSnapshot {
 interface EngineOptions {
   isOnline?: () => boolean
   onUnauthorized?: () => void
+  /** Runs before each push (used to upload pictures the notes refer to). */
+  beforePush?: () => Promise<void>
 }
 
 const CURSOR_KEY = 'cursor'
@@ -100,6 +102,8 @@ export class SyncEngine {
     }
     this.setSnapshot({ state: 'syncing' })
     try {
+      // Pictures go first, so a note never arrives elsewhere pointing at a missing picture.
+      await this.options.beforePush?.()
       await this.push()
       await this.pull()
       this.setSnapshot({ state: 'idle', lastSyncedAt: Date.now() })

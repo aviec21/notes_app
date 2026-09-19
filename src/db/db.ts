@@ -18,12 +18,24 @@ export interface MetaRow {
   value: unknown
 }
 
+/** A picture kept on this device. `uploaded`: 0 waiting, 1 on the server, 2 refused (too big). */
+export interface ImageRow {
+  id: string
+  noteId: string
+  blob: Blob
+  mime: string
+  size: number
+  uploaded: 0 | 1 | 2
+  createdAt: number
+}
+
 export class NotesDB extends Dexie {
   notes!: Table<LocalRecord<'note'>, string>
   folders!: Table<LocalRecord<'folder'>, string>
   tags!: Table<LocalRecord<'tag'>, string>
   outbox!: Table<OutboxOp, number>
   meta!: Table<MetaRow, string>
+  images!: Table<ImageRow, string>
 
   constructor(name = 'notes-app') {
     super(name)
@@ -34,6 +46,7 @@ export class NotesDB extends Dexie {
       outbox: '++seq, [entity+id], sending',
       meta: 'key',
     })
+    this.version(2).stores({ images: 'id, noteId, uploaded' })
   }
 
   /** The table holding an entity's records. */

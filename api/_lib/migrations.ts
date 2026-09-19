@@ -84,6 +84,20 @@ const MIGRATIONS: Migration[] = [
       `CREATE INDEX IF NOT EXISTS purged_rev_idx  ON purged (rev)`,
     ],
   },
+  {
+    id: 3,
+    statements: [
+      // Pictures live in the database, so they are private behind the same sign-in.
+      `CREATE TABLE IF NOT EXISTS images (
+         id         uuid PRIMARY KEY,
+         note_id    uuid,
+         mime       text        NOT NULL,
+         size       int         NOT NULL,
+         data       bytea       NOT NULL,
+         created_at timestamptz NOT NULL DEFAULT now()
+       )`,
+    ],
+  },
 ]
 
 export async function runMigrations(query: Query): Promise<void> {

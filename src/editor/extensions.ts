@@ -1,10 +1,13 @@
 import Highlight from '@tiptap/extension-highlight'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
+import { TableKit } from '@tiptap/extension-table'
 import Subscript from '@tiptap/extension-subscript'
 import Superscript from '@tiptap/extension-superscript'
 import { Color, FontFamily, FontSize, TextStyle } from '@tiptap/extension-text-style'
 import { Placeholder } from '@tiptap/extensions'
 import StarterKit from '@tiptap/starter-kit'
+import { ChartBlock } from './nodes/ChartNode'
+import { NoteImage } from './nodes/ImageNode'
 
 // Self-hosted fonts (Latin, regular + bold, and italic for the text faces), so they are
 // cached with the app and work offline in every browser.
@@ -33,6 +36,9 @@ export const noteExtensions = [
   Superscript,
   TaskList,
   TaskItem.configure({ nested: true }),
+  TableKit.configure({ table: { resizable: true, allowTableNodeSelection: true } }),
+  NoteImage,
+  ChartBlock,
   Placeholder.configure({ placeholder: 'Start writing…' }),
 ]
 

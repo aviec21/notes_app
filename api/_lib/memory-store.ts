@@ -74,6 +74,10 @@ export class MemoryStore implements Store {
     return total
   }
 
+  async purgeOrphanImages() {
+    return 0 // the in-memory store keeps no pictures
+  }
+
   async changesSince(since: number, limit: number): Promise<ChangesPage> {
     const records: ChangesPage['records'] = []
     for (const entity of Object.keys(this.tables) as EntityName[]) {

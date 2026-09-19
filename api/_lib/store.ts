@@ -30,6 +30,8 @@ export interface Store {
   changesSince(since: number, limit: number): Promise<ChangesPage>
   /** Permanently deletes notes and folders binned before `cutoff` (epoch ms). Returns how many. */
   purgeExpired(cutoff: number): Promise<number>
+  /** Deletes stored pictures that no note refers to any more. Returns how many. */
+  purgeOrphanImages(): Promise<number>
 }
 
 const TABLE: Record<EntityName, string> = { note: 'notes', folder: 'folders', tag: 'tags' }
@@ -176,6 +178,20 @@ export class PgStore implements Store {
       total += Number(rows[0].n)
     }
     return total
+  }
+
+  async purgeOrphanImages() {
+    // The grace period keeps a picture that was uploaded just before its note arrives.
+    const rows = await this.query(
+      `WITH gone AS (
+         DELETE FROM images i
+         WHERE i.created_at < now() - interval '1 day'
+           AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.content::text LIKE '%' || i.id::text || '%')
+         RETURNING 1
+       )
+       SELECT count(*)::int AS n FROM gone`,
+    )
+    return Number(rows[0].n)
   }
 
   async pruneApplied() {

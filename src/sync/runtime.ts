@@ -1,4 +1,5 @@
 import { NotesDB } from '../db/db'
+import { uploadPendingImages } from '../images'
 import { Repo } from '../db/repo'
 import { SyncEngine } from './engine'
 import { httpTransport } from './transport'
@@ -6,7 +7,9 @@ import { httpTransport } from './transport'
 // The app's single on-device database, repository and sync engine.
 export const db = new NotesDB()
 export const repo = new Repo(db)
-export const engine = new SyncEngine(db, repo, httpTransport)
+export const engine = new SyncEngine(db, repo, httpTransport, {
+  beforePush: () => uploadPendingImages(),
+})
 
 const AFTER_EDIT_MS = 1500
 const EVERY_MS = 60_000
