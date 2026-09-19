@@ -1,14 +1,16 @@
 import { jwtVerify, SignJWT } from 'jose'
 import { SESSION_COOKIE, SESSION_DAYS } from '../../shared/config.js'
+import { db } from './db.js'
 
 const DAY = 24 * 60 * 60
 
 export interface Session {
-  email: string
+  version: number
   issuedAt: number // seconds since epoch
+  defaultPin: boolean
 }
 
-export function secretKey(): Uint8Array {
+function secretKey(): Uint8Array {
   const secret = process.env.SESSION_SECRET
   if (!secret || secret.length < 32) {
     throw new Error('SESSION_SECRET is missing or shorter than 32 characters')
@@ -16,16 +18,11 @@ export function secretKey(): Uint8Array {
   return new TextEncoder().encode(secret)
 }
 
-export function allowedEmail(): string {
-  const email = process.env.ALLOWED_EMAIL?.trim().toLowerCase()
-  if (!email) throw new Error('ALLOWED_EMAIL is not set')
-  return email
-}
-
-export async function createSessionToken(email: string): Promise<string> {
-  return new SignJWT({})
+/** `version` ties the cookie to the current PIN, so changing the PIN signs out other devices. */
+export async function createSessionToken(version: number): Promise<string> {
+  return new SignJWT({ v: version })
     .setProtectedHeader({ alg: 'HS256' })
-    .setSubject(email)
+    .setSubject('owner')
     .setIssuedAt()
     .setExpirationTime(`${SESSION_DAYS}d`)
     .sign(secretKey())
@@ -42,18 +39,29 @@ export function readCookie(request: Request, name: string): string | undefined {
   return undefined
 }
 
-/** Returns the signed-in user, or null if there is no valid, allowlisted session. */
+/**
+ * Returns the current session, or null if there is no valid one. A database failure
+ * throws instead of returning null, so callers can tell "signed out" from "server down".
+ */
 export async function readSession(request: Request): Promise<Session | null> {
   const token = readCookie(request, SESSION_COOKIE)
   if (!token) return null
+
+  let version: number
+  let issuedAt: number
   try {
     const { payload } = await jwtVerify(token, secretKey(), { algorithms: ['HS256'] })
-    // Re-check the allowlist on every request so removing an email revokes access.
-    if (!payload.sub || payload.sub !== allowedEmail() || !payload.iat) return null
-    return { email: payload.sub, issuedAt: payload.iat }
+    if (payload.sub !== 'owner' || typeof payload.v !== 'number' || !payload.iat) return null
+    version = payload.v
+    issuedAt = payload.iat
   } catch {
     return null
   }
+
+  const sql = await db()
+  const [row] = await sql`SELECT session_version, is_default FROM auth_pin WHERE id = 1`
+  if (!row || row.session_version !== version) return null
+  return { version, issuedAt, defaultPin: row.is_default }
 }
 
 export function sessionCookie(token: string, request: Request): string {

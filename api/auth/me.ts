@@ -1,3 +1,4 @@
+import { json } from '../_lib/http.js'
 import {
   createSessionToken,
   readSession,
@@ -6,12 +7,17 @@ import {
 } from '../_lib/session.js'
 
 export async function GET(request: Request) {
-  const session = await readSession(request)
-  if (!session) return Response.json({ error: 'unauthorized' }, { status: 401 })
+  try {
+    const session = await readSession(request)
+    if (!session) return json({ error: 'unauthorized' }, 401)
 
-  const headers = new Headers({ 'Cache-Control': 'no-store' })
-  if (Date.now() / 1000 - session.issuedAt > RENEW_AFTER_SECONDS) {
-    headers.append('Set-Cookie', sessionCookie(await createSessionToken(session.email), request))
+    const headers = new Headers()
+    if (Date.now() / 1000 - session.issuedAt > RENEW_AFTER_SECONDS) {
+      headers.append('Set-Cookie', sessionCookie(await createSessionToken(session.version), request))
+    }
+    return json({ defaultPin: session.defaultPin }, 200, headers)
+  } catch (err) {
+    console.error('Session check failed:', err instanceof Error ? err.message : err)
+    return json({ error: 'server' }, 500)
   }
-  return Response.json({ email: session.email }, { headers })
 }

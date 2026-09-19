@@ -8,10 +8,8 @@ export async function readJson(request: Request): Promise<Record<string, unknown
   }
 }
 
-export function normalizeEmail(value: unknown): string {
-  return typeof value === 'string' ? value.trim().toLowerCase() : ''
-}
-
-export function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
+export function json(body: unknown, status = 200, headers?: Headers | Record<string, string>): Response {
+  const merged = new Headers(headers)
+  merged.set('Cache-Control', 'no-store')
+  return Response.json(body, { status, headers: merged })
 }

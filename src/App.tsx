@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from './auth'
+import ChangePin from './components/ChangePin'
 import LoginScreen from './components/LoginScreen'
 import { useTheme } from './theme'
 
@@ -21,11 +22,21 @@ function useOnline() {
 }
 
 const THEME_LABEL = { system: 'System', light: 'Light', dark: 'Dark' } as const
+const card = { background: 'var(--surface)', border: '1px solid var(--border)' }
 
-function Home({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+function Home({
+  defaultPin,
+  onSignOut,
+  onPinChanged,
+}: {
+  defaultPin: boolean
+  onSignOut: () => void
+  onPinChanged: () => void
+}) {
   const online = useOnline()
   const { theme, cycle } = useTheme()
   const [api, setApi] = useState<ApiState>('checking')
+  const [showChangePin, setShowChangePin] = useState(false)
 
   useEffect(() => {
     if (!online) return
@@ -55,34 +66,60 @@ function Home({ email, onSignOut }: { email: string; onSignOut: () => void }) {
           type="button"
           onClick={cycle}
           className="rounded-lg px-3 py-2 text-sm"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          style={card}
           aria-label={`Theme: ${THEME_LABEL[theme]}. Tap to change.`}
         >
           Theme: {THEME_LABEL[theme]}
         </button>
       </header>
-      <p style={{ color: 'var(--muted)' }}>
-        Signed in. Notes, folders, tags and sync come next.
-      </p>
-      <dl
-        className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-xl p-4 text-sm"
-        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-      >
-        <dt style={{ color: 'var(--muted)' }}>Account</dt>
-        <dd className="break-all">{email}</dd>
+
+      {defaultPin && (
+        <div role="alert" className="rounded-xl p-4 text-sm" style={{ ...card, borderColor: 'var(--accent)' }}>
+          <strong>You are still using the default PIN.</strong> Anyone who finds this address could
+          open your notes. Change it now.
+          {!showChangePin && (
+            <button
+              type="button"
+              onClick={() => setShowChangePin(true)}
+              className="mt-3 block rounded-lg px-3 py-2 font-medium"
+              style={{ background: 'var(--accent)', color: 'var(--bg)' }}
+            >
+              Change PIN
+            </button>
+          )}
+        </div>
+      )}
+
+      <p style={{ color: 'var(--muted)' }}>Signed in. Notes, folders, tags and sync come next.</p>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-xl p-4 text-sm" style={card}>
         <dt style={{ color: 'var(--muted)' }}>Network</dt>
         <dd>{online ? 'Online' : 'Offline'}</dd>
         <dt style={{ color: 'var(--muted)' }}>API</dt>
         <dd>{apiLabel}</dd>
       </dl>
-      <button
-        type="button"
-        onClick={onSignOut}
-        className="self-start rounded-lg px-3 py-2 text-sm"
-        style={{ border: '1px solid var(--border)' }}
-      >
-        Sign out
-      </button>
+
+      {showChangePin && <ChangePin onChanged={onPinChanged} />}
+
+      <div className="flex gap-3">
+        {!showChangePin && (
+          <button
+            type="button"
+            onClick={() => setShowChangePin(true)}
+            className="rounded-lg px-3 py-2 text-sm"
+            style={{ border: '1px solid var(--border)' }}
+          >
+            Change PIN
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onSignOut}
+          className="rounded-lg px-3 py-2 text-sm"
+          style={{ border: '1px solid var(--border)' }}
+        >
+          Sign out
+        </button>
+      </div>
     </main>
   )
 }
@@ -98,5 +135,5 @@ export default function App() {
     )
   }
   if (state.status === 'signedOut') return <LoginScreen onSignedIn={refresh} />
-  return <Home email={state.email} onSignOut={signOut} />
+  return <Home defaultPin={state.defaultPin} onSignOut={signOut} onPinChanged={refresh} />
 }

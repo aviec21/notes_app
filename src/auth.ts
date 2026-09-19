@@ -3,21 +3,21 @@ import { useCallback, useEffect, useState } from 'react'
 export type AuthState =
   | { status: 'loading' }
   | { status: 'signedOut' }
-  | { status: 'signedIn'; email: string }
+  | { status: 'signedIn'; defaultPin: boolean }
 
-const CACHE_KEY = 'notes.user'
+const CACHE_KEY = 'notes.signedIn'
 
-function cachedEmail(): string | null {
+function wasSignedIn(): boolean {
   try {
-    return localStorage.getItem(CACHE_KEY)
+    return localStorage.getItem(CACHE_KEY) === '1'
   } catch {
-    return null
+    return false
   }
 }
 
-function cacheEmail(email: string | null) {
+function rememberSignedIn(value: boolean) {
   try {
-    if (email) localStorage.setItem(CACHE_KEY, email)
+    if (value) localStorage.setItem(CACHE_KEY, '1')
     else localStorage.removeItem(CACHE_KEY)
   } catch {
     // Storage can be unavailable (private mode); the app still works online.
@@ -25,8 +25,8 @@ function cacheEmail(email: string | null) {
 }
 
 /**
- * Tracks who is signed in. The server is the authority, but a previously verified
- * user stays signed in while offline so the app opens without a connection.
+ * Tracks whether you are signed in. The server is the authority, but a previously
+ * verified device stays signed in while offline so the app opens without a connection.
  */
 export function useAuth() {
   const [state, setState] = useState<AuthState>({ status: 'loading' })
@@ -35,19 +35,18 @@ export function useAuth() {
     try {
       const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
       if (res.ok) {
-        const { email } = (await res.json()) as { email: string }
-        cacheEmail(email)
-        setState({ status: 'signedIn', email })
+        const { defaultPin } = (await res.json()) as { defaultPin: boolean }
+        rememberSignedIn(true)
+        setState({ status: 'signedIn', defaultPin })
       } else if (res.status === 401) {
-        cacheEmail(null)
+        rememberSignedIn(false)
         setState({ status: 'signedOut' })
       } else {
         throw new Error(`Unexpected status ${res.status}`)
       }
     } catch {
-      // Offline or server trouble: trust the last verified user rather than lock you out.
-      const email = cachedEmail()
-      setState(email ? { status: 'signedIn', email } : { status: 'signedOut' })
+      // Offline or server trouble: trust the last verified state rather than lock you out.
+      setState(wasSignedIn() ? { status: 'signedIn', defaultPin: false } : { status: 'signedOut' })
     }
   }, [])
 
@@ -59,12 +58,12 @@ export function useAuth() {
   }, [verify])
 
   const signOut = useCallback(async () => {
-    cacheEmail(null)
+    rememberSignedIn(false)
     setState({ status: 'signedOut' })
     try {
       await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
     } catch {
-      // Offline: the local session is cleared; the cookie expires or is cleared next time.
+      // Offline: the local session is cleared; the cookie is cleared or expires later.
     }
   }, [])
 
