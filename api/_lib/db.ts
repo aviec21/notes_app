@@ -1,21 +1,12 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
+import { runMigrations, type Query } from './migrations.js'
 import { DEFAULT_PIN, hashPin } from './pinhash.js'
+import { PgStore } from './store.js'
 
 let ready: Promise<void> | undefined
 
 async function prepare(sql: NeonQueryFunction<false, false>) {
-  await sql`
-    CREATE TABLE IF NOT EXISTS auth_pin (
-      id              int PRIMARY KEY CHECK (id = 1),
-      pin_hash        text        NOT NULL,
-      is_default      boolean     NOT NULL DEFAULT false,
-      session_version int         NOT NULL DEFAULT 1,
-      failed_count    int         NOT NULL DEFAULT 0,
-      locked_until    timestamptz,
-      updated_at      timestamptz NOT NULL DEFAULT now()
-    )`
-  // Leftover from the abandoned emailed-code sign-in.
-  await sql`DROP TABLE IF EXISTS login_codes`
+  await runMigrations((text, params) => sql.query(text, params))
 
   const existing = await sql`SELECT 1 FROM auth_pin WHERE id = 1`
   if (existing.length === 0) {
@@ -27,8 +18,8 @@ async function prepare(sql: NeonQueryFunction<false, false>) {
 }
 
 /**
- * Returns a SQL tagged-template client for Neon, creating the PIN table on first use.
- * (The notes schema will get proper migrations when the sync phase starts.)
+ * Returns a SQL tagged-template client for Neon. The first call in each server instance
+ * also applies any pending schema migrations.
  */
 export async function db() {
   const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL
@@ -43,4 +34,10 @@ export async function db() {
     throw err
   }
   return sql
+}
+
+export async function getStore(): Promise<PgStore> {
+  const sql = await db()
+  const query: Query = (text, params) => sql.query(text, params)
+  return new PgStore(query)
 }
