@@ -8,7 +8,7 @@ export interface Session {
   issuedAt: number // seconds since epoch
 }
 
-function secretKey(): Uint8Array {
+export function secretKey(): Uint8Array {
   const secret = process.env.SESSION_SECRET
   if (!secret || secret.length < 32) {
     throw new Error('SESSION_SECRET is missing or shorter than 32 characters')

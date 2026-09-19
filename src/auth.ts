@@ -68,5 +68,5 @@ export function useAuth() {
     }
   }, [])
 
-  return { state, signOut }
+  return { state, signOut, refresh: verify }
 }

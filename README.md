@@ -2,7 +2,7 @@
 
 A personal notes PWA: offline-first, syncs across devices, installable from Chrome.
 
-**Stack:** React + TypeScript + Vite + Tailwind (PWA) · Vercel Functions (`/api`) · Neon Postgres · Google sign-in.
+**Stack:** React + TypeScript + Vite + Tailwind (PWA) · Vercel Functions (`/api`) · Neon Postgres · emailed one-time-code sign-in (Resend).
 
 ## Develop
 

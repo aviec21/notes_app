@@ -1,83 +1,188 @@
-import { useEffect, useRef, useState } from 'react'
-import { GOOGLE_CLIENT_ID } from '../../shared/config'
+import { useEffect, useState, type FormEvent } from 'react'
+import { CODE_LENGTH, CODE_TTL_MINUTES } from '../../shared/config'
 
-interface GoogleId {
-  initialize(config: {
-    client_id: string
-    ux_mode: 'redirect'
-    login_uri: string
-  }): void
-  renderButton(parent: HTMLElement, options: Record<string, string | number>): void
-}
+const EMAIL_KEY = 'notes.loginEmail'
+const RESEND_SECONDS = 60
 
-declare global {
-  interface Window {
-    google?: { accounts: { id: GoogleId } }
+function savedEmail(): string {
+  try {
+    return localStorage.getItem(EMAIL_KEY) ?? ''
+  } catch {
+    return ''
   }
 }
 
-const ERRORS: Record<string, string> = {
-  not_allowed: 'That Google account is not allowed to use this app.',
-  invalid: 'Sign-in could not be verified. Please try again.',
+function saveEmail(email: string) {
+  try {
+    localStorage.setItem(EMAIL_KEY, email)
+  } catch {
+    // Prefilling is a convenience only.
+  }
 }
 
-function takeErrorFromUrl(): string | null {
-  const code = new URLSearchParams(window.location.search).get('error')
-  if (!code) return null
-  window.history.replaceState(null, '', window.location.pathname)
-  return ERRORS[code] ?? ERRORS.invalid
+async function post(path: string, body: unknown): Promise<Response | null> {
+  try {
+    return await fetch(path, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    return null // network failure
+  }
 }
 
-export default function LoginScreen() {
-  const buttonRef = useRef<HTMLDivElement>(null)
-  const [error] = useState(takeErrorFromUrl)
-  const [loadFailed, setLoadFailed] = useState(false)
+const OFFLINE = 'You are offline. Connect to the internet to sign in.'
+
+export default function LoginScreen({ onSignedIn }: { onSignedIn: () => void }) {
+  const [step, setStep] = useState<'email' | 'code'>('email')
+  const [email, setEmail] = useState(savedEmail)
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [cooldown, setCooldown] = useState(0)
 
   useEffect(() => {
-    const render = () => {
-      const id = window.google?.accounts.id
-      if (!id || !buttonRef.current) return
-      // Redirect mode works in installed PWAs and browsers that block pop-ups.
-      id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        ux_mode: 'redirect',
-        login_uri: `${window.location.origin}/api/auth/google`,
-      })
-      id.renderButton(buttonRef.current, {
-        theme: 'outline',
-        size: 'large',
-        text: 'signin_with',
-        shape: 'pill',
-        width: 260,
-      })
-    }
+    if (cooldown <= 0) return
+    const timer = setTimeout(() => setCooldown((s) => s - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [cooldown])
 
-    if (window.google) {
-      render()
-      return
+  async function sendCode(event?: FormEvent) {
+    event?.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    const res = await post('/api/auth/request', { email })
+    setBusy(false)
+
+    if (!res) return setError(OFFLINE)
+    if (res.status === 429) {
+      const { error: kind } = (await res.json().catch(() => ({}))) as { error?: string }
+      if (kind === 'too_soon') {
+        setStep('code')
+        setCooldown(RESEND_SECONDS)
+        return setError('A code was just sent. Please wait a minute before requesting another.')
+      }
+      return setError('Too many codes requested. Please try again in an hour.')
     }
-    const script = document.createElement('script')
-    script.src = 'https://accounts.google.com/gsi/client'
-    script.async = true
-    script.onload = render
-    script.onerror = () => setLoadFailed(true)
-    document.head.appendChild(script)
-    return () => script.remove()
-  }, [])
+    if (!res.ok) return setError('Could not send the code. Please try again.')
+
+    saveEmail(email.trim())
+    setCode('')
+    setStep('code')
+    setCooldown(RESEND_SECONDS)
+  }
+
+  async function submitCode(event: FormEvent) {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    const res = await post('/api/auth/verify', { email, code })
+    setBusy(false)
+
+    if (!res) return setError(OFFLINE)
+    if (res.ok) return onSignedIn()
+    setCode('')
+    setError(
+      res.status === 401
+        ? 'That code is wrong or has expired. Check it and try again, or request a new one.'
+        : 'Could not verify the code. Please try again.',
+    )
+  }
+
+  const input = 'w-full rounded-lg px-3 py-3 text-base outline-none focus:ring-2'
+  const inputStyle = { background: 'var(--surface)', border: '1px solid var(--border)' }
+  const button = 'w-full rounded-lg px-3 py-3 text-base font-medium disabled:opacity-60'
+  const primary = { background: 'var(--accent)', color: 'var(--bg)' }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col items-center justify-center gap-6 px-4 py-10 text-center">
+    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-5 px-4 py-10">
       <h1 className="text-3xl font-semibold">Notes</h1>
-      <p style={{ color: 'var(--muted)' }}>Sign in to open your notes.</p>
-      {error && (
-        <p role="alert" className="rounded-lg px-3 py-2 text-sm" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-          {error}
-        </p>
+
+      {step === 'email' ? (
+        <form onSubmit={sendCode} className="flex flex-col gap-4">
+          <p style={{ color: 'var(--muted)' }}>Enter your email and we will send you a sign-in code.</p>
+          <input
+            type="email"
+            name="email"
+            autoComplete="email"
+            inputMode="email"
+            required
+            autoFocus
+            placeholder="you@example.com"
+            aria-label="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={input}
+            style={inputStyle}
+          />
+          <button type="submit" disabled={busy || !email} className={button} style={primary}>
+            {busy ? 'Sending…' : 'Send code'}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={submitCode} className="flex flex-col gap-4">
+          <p style={{ color: 'var(--muted)' }}>
+            If <span className="break-all">{email.trim()}</span> is allowed, a {CODE_LENGTH}-digit code is on
+            its way. It expires in {CODE_TTL_MINUTES} minutes.
+          </p>
+          <input
+            type="text"
+            name="code"
+            inputMode="numeric"
+            pattern={`\\d{${CODE_LENGTH}}`}
+            maxLength={CODE_LENGTH}
+            autoComplete="one-time-code"
+            required
+            autoFocus
+            placeholder={'0'.repeat(CODE_LENGTH)}
+            aria-label="Sign-in code"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+            className={`${input} text-center text-2xl tracking-[0.4em]`}
+            style={inputStyle}
+          />
+          <button
+            type="submit"
+            disabled={busy || code.length !== CODE_LENGTH}
+            className={button}
+            style={primary}
+          >
+            {busy ? 'Checking…' : 'Sign in'}
+          </button>
+          <div className="flex justify-between gap-3 text-sm">
+            <button
+              type="button"
+              onClick={() => sendCode()}
+              disabled={busy || cooldown > 0}
+              className="underline disabled:no-underline disabled:opacity-60"
+            >
+              {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setStep('email')
+                setError(null)
+              }}
+              className="underline"
+            >
+              Use a different email
+            </button>
+          </div>
+        </form>
       )}
-      <div ref={buttonRef} className="min-h-11" />
-      {loadFailed && (
-        <p role="alert" className="text-sm" style={{ color: 'var(--muted)' }}>
-          Could not load Google sign-in. Check your connection and reload.
+
+      {error && (
+        <p
+          role="alert"
+          className="rounded-lg px-3 py-2 text-sm"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
+          {error}
         </p>
       )}
     </main>

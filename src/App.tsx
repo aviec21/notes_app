@@ -88,7 +88,7 @@ function Home({ email, onSignOut }: { email: string; onSignOut: () => void }) {
 }
 
 export default function App() {
-  const { state, signOut } = useAuth()
+  const { state, signOut, refresh } = useAuth()
 
   if (state.status === 'loading') {
     return (
@@ -97,6 +97,6 @@ export default function App() {
       </main>
     )
   }
-  if (state.status === 'signedOut') return <LoginScreen />
+  if (state.status === 'signedOut') return <LoginScreen onSignedIn={refresh} />
   return <Home email={state.email} onSignOut={signOut} />
 }
