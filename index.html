@@ -11,6 +11,13 @@
     <meta name="description" content="Personal notes that work offline and sync everywhere." />
     <link rel="apple-touch-icon" href="/pwa-192.png" />
     <title>Notes</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a light/dark flash.
+      try {
+        var t = localStorage.getItem('notes.theme')
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t)
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
