@@ -6,12 +6,14 @@ export default function SearchBox({
   onChange,
   inputRef,
   showHint = false,
+  placeholder = 'Search notes',
 }: {
   value: string
   onChange: (value: string) => void
   inputRef?: Ref<HTMLInputElement>
   /** Show the "/" shortcut hint (desktop). */
   showHint?: boolean
+  placeholder?: string
 }) {
   return (
     <div
@@ -25,13 +27,16 @@ export default function SearchBox({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') {
+          // Inside a dialog, a filled box is cleared first; an empty one lets Esc close the dialog.
+          if (e.key === 'Escape' && value) {
+            e.preventDefault()
             onChange('')
+          } else if (e.key === 'Escape' && !e.currentTarget.closest('dialog')) {
             e.currentTarget.blur()
           }
         }}
-        placeholder="Search notes"
-        aria-label="Search notes"
+        placeholder={placeholder}
+        aria-label={placeholder}
         className="min-w-0 flex-1 bg-transparent text-sm outline-none [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (

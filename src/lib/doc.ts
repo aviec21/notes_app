@@ -25,6 +25,7 @@ function walk(node: unknown): string {
   if (!node || typeof node !== 'object') return ''
   const { type, text, content } = node as DocNode
   if (type === 'text') return text ?? ''
+  if (type === 'hardBreak') return '\n'
   const children = (content ?? []).map(walk)
   if (type === 'tableRow') return children.join('\t')
   return children.join(type && LINE_CONTAINERS.has(type) ? '\n' : '')

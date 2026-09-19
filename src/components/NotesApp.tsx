@@ -1,12 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useIsDesktop, useLibraryData, usePersistentChoice } from '../hooks'
 import { useHotkeys } from '../hotkeys'
 import type { View } from '../lib/library'
 import { useSidebarWidth } from '../sidebarWidth'
 import { startSync } from '../sync/runtime'
+import HowToUse from './HowToUse'
 import Library, { type ViewMode } from './Library'
 import MobileNav from './MobileNav'
-import NoteEditor from './NoteEditor'
+// The rich-text editor is large; it loads the first time a note is opened (and is then
+// cached for offline use like the rest of the app).
+const NoteEditor = lazy(() => import('./NoteEditor'))
+
+const editorLoading = (
+  <p className="py-16 text-center" style={{ color: 'var(--muted)' }}>
+    Opening note…
+  </p>
+)
 import SettingsDialog from './SettingsDialog'
 import ShortcutsHelp from './ShortcutsHelp'
 import Sidebar from './Sidebar'
@@ -25,17 +34,24 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
   const [mode, setMode] = usePersistentChoice<ViewMode>('notes.viewMode', 'list', ['list', 'grid'])
+  const [editorModeChoice, setEditorModeChoice] = usePersistentChoice<'on' | 'off'>('notes.editorMode', 'on', ['on', 'off'])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
   const { width, separatorProps } = useSidebarWidth()
   const searchRef = useRef<HTMLInputElement>(null)
+
+  // Editor mode (desktop only): the open note sits in a panel beside the list.
+  const editorMode = isDesktop && editorModeChoice === 'on'
+  const split = editorMode && openId !== null
 
   const closeEditor = useCallback(() => setOpenId(null), [])
   useEffect(() => startSync(onUnauthorized), [onUnauthorized])
 
-  // Leaving the editor goes through history so its Back-button handling saves first.
+  // A full-screen editor is left through history, so Back behaves like the device's Back
+  // button. The side panel simply stays open while you browse.
   const leaveEditor = () => {
-    if (openId) history.back()
+    if (openId && !split) history.back()
   }
   const navigate = (next: View) => {
     setQuery('')
@@ -81,6 +97,7 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
               onQuery={changeQuery}
               onOpenSettings={() => setSettingsOpen(true)}
               onOpenShortcuts={() => setHelpOpen(true)}
+              onOpenGuide={() => setGuideOpen(true)}
             />
           </aside>
           <div
@@ -90,39 +107,64 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
         </>
       )}
 
-      <main className="min-w-0 flex-1 px-4 md:px-6">
-        {!isDesktop && !openId && data && (
-          <MobileNav
-            data={data}
-            view={view}
-            query={query}
-            searchRef={searchRef}
-            onNavigate={navigate}
-            onQuery={changeQuery}
-            onOpenSettings={() => setSettingsOpen(true)}
-          />
-        )}
-        {data === undefined ? (
-          <p className="py-16 text-center" style={{ color: 'var(--muted)' }}>
-            Loading…
-          </p>
-        ) : openId ? (
-          <NoteEditor id={openId} onClose={closeEditor} />
-        ) : (
-          <Library
-            data={data}
-            view={view}
-            query={query}
-            mode={mode}
-            onMode={setMode}
-            isDesktop={isDesktop}
-            banner={banner}
-            onNavigate={navigate}
-            onClearQuery={() => setQuery('')}
-            onOpenNote={setOpenId}
-          />
-        )}
-      </main>
+      {data === undefined ? (
+        <main className="min-w-0 flex-1 px-4 py-16 text-center md:px-6" style={{ color: 'var(--muted)' }}>
+          Loading…
+        </main>
+      ) : openId && !split ? (
+        <main className="min-w-0 flex-1 px-4 md:px-6">
+          <Suspense fallback={editorLoading}>
+            <NoteEditor key={openId} id={openId} onClose={closeEditor} />
+          </Suspense>
+        </main>
+      ) : (
+        <>
+          <main
+            className={split ? 'h-screen shrink-0 overflow-y-auto px-6' : 'min-w-0 flex-1 px-4 md:px-6'}
+            style={split ? { width: 'clamp(300px, 38%, 520px)' } : undefined}
+          >
+            {!isDesktop && (
+              <MobileNav
+                data={data}
+                view={view}
+                query={query}
+                searchRef={searchRef}
+                onNavigate={navigate}
+                onQuery={changeQuery}
+                onOpenSettings={() => setSettingsOpen(true)}
+                onOpenShortcuts={() => setHelpOpen(true)}
+                onOpenGuide={() => setGuideOpen(true)}
+              />
+            )}
+            <Library
+              data={data}
+              view={view}
+              query={query}
+              mode={mode}
+              onMode={setMode}
+              isDesktop={isDesktop}
+              banner={banner}
+              onNavigate={navigate}
+              onClearQuery={() => setQuery('')}
+              onOpenNote={setOpenId}
+              editorMode={isDesktop ? editorMode : undefined}
+              onEditorMode={isDesktop ? (on) => setEditorModeChoice(on ? 'on' : 'off') : undefined}
+              activeNoteId={split ? openId : null}
+            />
+          </main>
+          {split && (
+            <section
+              aria-label="Open note"
+              className="h-screen min-w-0 flex-1 overflow-y-auto px-6"
+              style={{ borderLeft: '1px solid var(--border)' }}
+            >
+              <Suspense fallback={editorLoading}>
+                <NoteEditor key={openId} id={openId} onClose={closeEditor} embedded />
+              </Suspense>
+            </section>
+          )}
+        </>
+      )}
 
       <SettingsDialog
         open={settingsOpen}
@@ -132,6 +174,7 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
         onPinChanged={onPinChanged}
       />
       <ShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <HowToUse open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>
   )
 }

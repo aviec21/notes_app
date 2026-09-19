@@ -1,12 +1,13 @@
 import {
   fieldsOf,
+  type DocJson,
   type EntityName,
   type FolderRecord,
   type NoteRecord,
   type RecordByEntity,
   type TagRecord,
 } from '../../shared/sync'
-import { textToDoc } from '../lib/doc'
+import { docToText, textToDoc } from '../lib/doc'
 import type { LocalRecord, NotesDB } from './db'
 
 const sameValue = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b)
@@ -155,9 +156,18 @@ export class Repo {
     return note.id
   }
 
-  /** Saves a note's title and plain text (phase 3 editor; rich text arrives later). */
+  /** Saves a note's title and plain text (used by tests and imports). */
   setNoteText(id: string, title: string, text: string) {
     return this.update('note', id, { title, content: textToDoc(text), contentText: text })
+  }
+
+  /** Saves a note's title and rich-text document; the searchable text is derived from it. */
+  setNoteContent(id: string, title: string, content: DocJson) {
+    return this.update('note', id, { title, content, contentText: docToText(content) })
+  }
+
+  renameNote(id: string, title: string) {
+    return this.update('note', id, { title: title.trim() })
   }
 
   /** Removes a note that was created but never given any content. */

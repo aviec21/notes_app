@@ -1,6 +1,6 @@
 ﻿// @vitest-environment jsdom
 import 'fake-indexeddb/auto'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LibraryData, View } from '../lib/library'
@@ -184,6 +184,44 @@ describe('Library on desktop', () => {
     expect(await db.notes.count()).toBe(4)
   })
 
+  it('renames a single selected note', async () => {
+    const ids = await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
+    await user.click(screen.getByRole('button', { name: 'Rename' }))
+    const dialog = await openDialog()
+    const input = within(dialog).getByRole('textbox', { hidden: true })
+    expect((input as HTMLInputElement).value).toBe('Groceries')
+    await user.clear(input)
+    await user.type(input, 'Shopping{Enter}')
+    await waitFor(async () => expect((await db.notes.get(ids.loose))?.title).toBe('Shopping'))
+  })
+
+  it('renames a selected folder with F2', async () => {
+    const ids = await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Work' }))
+    await user.keyboard('{F2}')
+    const dialog = await openDialog()
+    expect(within(dialog).getByText('Rename folder')).toBeTruthy()
+    const input = within(dialog).getByRole('textbox', { hidden: true })
+    await user.clear(input)
+    await user.type(input, 'Office{Enter}')
+    await waitFor(async () => expect((await db.folders.get(ids.folder))?.name).toBe('Office'))
+  })
+
+  it('offers Rename only when exactly one item is selected', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeTruthy()
+    await user.click(screen.getByRole('checkbox', { name: 'Select Ideas' }))
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
+  })
+
   it('pins the selection with the P shortcut', async () => {
     const ids = await seed()
     const user = userEvent.setup()
@@ -203,6 +241,50 @@ describe('Library on a phone', () => {
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
     await user.click(screen.getByRole('button', { name: 'Select' }))
     expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0)
+  })
+
+  it('starts selecting on touch-and-hold, without also opening the item', async () => {
+    const ids = await seed()
+    const onOpenNote = vi.fn()
+    render(<Harness data={await load()} isDesktop={false} onOpenNote={onOpenNote} />)
+
+    const card = screen.getByRole('button', { name: /Groceries/ })
+    fireEvent.pointerDown(card, { pointerType: 'touch', clientX: 10, clientY: 10 })
+    await new Promise((r) => setTimeout(r, 650))
+    fireEvent.pointerUp(card)
+    fireEvent.click(card) // the tap that ends the hold
+
+    expect(onOpenNote).not.toHaveBeenCalled()
+    expect(screen.getByText('1 selected')).toBeTruthy()
+    expect((screen.getByRole('checkbox', { name: 'Select Groceries' }) as HTMLInputElement).checked).toBe(true)
+
+    // Further taps now pick items instead of opening them.
+    fireEvent.click(screen.getByRole('button', { name: /Ideas/ }))
+    expect(screen.getByText('2 selected')).toBeTruthy()
+    expect(onOpenNote).not.toHaveBeenCalledWith(ids.other)
+  })
+
+  it('does not treat a scroll (finger moving) as a hold', async () => {
+    await seed()
+    render(<Harness data={await load()} isDesktop={false} />)
+    const card = screen.getByRole('button', { name: /Groceries/ })
+    fireEvent.pointerDown(card, { pointerType: 'touch', clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(card, { pointerType: 'touch', clientX: 10, clientY: 60 })
+    await new Promise((r) => setTimeout(r, 650))
+    expect(screen.queryByText(/selected/)).toBeNull()
+  })
+
+  it('renames a tag from its page', async () => {
+    await seed()
+    const tagId = await repo.createTag('work')
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} view={{ kind: 'tag', id: tagId }} />)
+    await user.click(screen.getByRole('button', { name: 'Rename' }))
+    const dialog = await openDialog()
+    const input = within(dialog).getByRole('textbox', { hidden: true })
+    await user.clear(input)
+    await user.type(input, 'office{Enter}')
+    await waitFor(async () => expect((await db.tags.get(tagId))?.name).toBe('office'))
   })
 
   it('ignores keyboard shortcuts', async () => {

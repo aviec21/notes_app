@@ -7,7 +7,7 @@ import { repo } from '../sync/runtime'
 import ItemCard from './ItemCard'
 import { MoveDialog, TagsDialog } from './PickerDialogs'
 import { useDialogs } from './ui/Dialogs'
-import { BackIcon, CloseIcon, GridIcon, ListIcon, PinIcon, PlusIcon, TrashIcon } from './ui/Icons'
+import { BackIcon, CloseIcon, GridIcon, ListIcon, PinIcon, PlusIcon, SplitIcon, TrashIcon } from './ui/Icons'
 
 export type ViewMode = 'list' | 'grid'
 
@@ -23,6 +23,11 @@ interface Props {
   onNavigate: (view: View) => void
   onClearQuery: () => void
   onOpenNote: (id: string) => void
+  /** Desktop editor mode: notes open in a panel on the right. Omitted on phones. */
+  editorMode?: boolean
+  onEditorMode?: (on: boolean) => void
+  /** The note open in that panel, highlighted in the list. */
+  activeNoteId?: string | null
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -56,7 +61,21 @@ function ToolButton({
 }
 
 /** The main pane: a toolbar plus the notes and folders of the current view. */
-export default function Library({ data, view, query, mode, onMode, isDesktop, banner, onNavigate, onClearQuery, onOpenNote }: Props) {
+export default function Library({
+  data,
+  view,
+  query,
+  mode,
+  onMode,
+  isDesktop,
+  banner,
+  onNavigate,
+  onClearQuery,
+  onOpenNote,
+  editorMode,
+  onEditorMode,
+  activeNoteId,
+}: Props) {
   const dialogs = useDialogs()
   const [selection, setSelection] = useState<Set<string>>(new Set())
   const [selectMode, setSelectMode] = useState(false)
@@ -92,6 +111,11 @@ export default function Library({ data, view, query, mode, onMode, isDesktop, ba
   const clearSelection = () => {
     setSelection(new Set())
     setSelectMode(false)
+  }
+  // Touch-and-hold on a phone: enter selection with that item picked, like tapping Select.
+  const startSelectingWith = (key: string) => {
+    setSelectMode(true)
+    setSelection((prev) => new Set(prev).add(key))
   }
   const toggle = (key: string) =>
     setSelection((prev) => {
@@ -182,10 +206,45 @@ export default function Library({ data, view, query, mode, onMode, isDesktop, ba
     if (name) await moveSelected(await repo.createFolder(name))
   }
 
-  async function renameFolder() {
-    if (!folder) return
-    const name = await dialogs.prompt({ title: 'Rename folder', label: 'Folder name', initial: folder.name })
-    if (name) await repo.renameFolder(folder.id, name)
+  async function renameItem(ref: ItemRef) {
+    if (ref.entity === 'folder') {
+      const current = data.folders.find((f) => f.id === ref.id)
+      if (!current) return
+      const name = await dialogs.prompt({ title: 'Rename folder', label: 'Folder name', initial: current.name, confirmLabel: 'Rename' })
+      if (name) await repo.renameFolder(ref.id, name)
+    } else {
+      const current = data.notes.find((n) => n.id === ref.id)
+      if (!current) return
+      const title = await dialogs.prompt({ title: 'Rename note', label: 'Title', initial: current.title, confirmLabel: 'Rename' })
+      if (title) await repo.renameNote(ref.id, title)
+    }
+  }
+
+  async function renameSelected() {
+    if (selectedRefs.length !== 1) return
+    await renameItem(selectedRefs[0])
+    clearSelection()
+  }
+
+  const renameFolder = () => (folder ? renameItem({ entity: 'folder', id: folder.id }) : Promise.resolve())
+
+  async function renameTag() {
+    if (!tag) return
+    const name = await dialogs.prompt({ title: 'Rename tag', label: 'Tag name', initial: tag.name, confirmLabel: 'Rename' })
+    if (name) await repo.renameTag(tag.id, name.replace(/^#/, ''))
+  }
+
+  async function deleteTag() {
+    if (!tag) return
+    const ok = await dialogs.confirm({
+      title: 'Delete tag?',
+      message: `The tag #${tag.name} will be removed from all notes. The notes themselves are not deleted.`,
+      confirmLabel: 'Delete tag',
+      danger: true,
+    })
+    if (!ok) return
+    await repo.deleteTag(tag.id)
+    onNavigate({ kind: 'root' })
   }
 
   async function trashFolder() {
@@ -229,6 +288,8 @@ export default function Library({ data, view, query, mode, onMode, isDesktop, ba
       { keys: 'm', run: () => setMoveOpen(true), when: () => selectedNoteIds.length > 0 && !inBin },
       { keys: 't', run: () => setTagsOpen(true), when: () => selectedNoteIds.length > 0 && !inBin },
       { keys: 'r', run: () => void restoreSelected(), when: () => selecting && inBin },
+      { keys: 'f2', run: () => void renameSelected(), when: () => selectedKeys.length === 1 && !inBin },
+      { keys: 'e', run: () => onEditorMode?.(!editorMode), when: () => !!onEditorMode },
       {
         keys: 'enter',
         run: () => open(selectedKeys[0]),
@@ -305,6 +366,7 @@ export default function Library({ data, view, query, mode, onMode, isDesktop, ba
                 </>
               ) : (
                 <>
+                  {selectedKeys.length === 1 && <ToolButton onClick={() => void renameSelected()}>Rename</ToolButton>}
                   <ToolButton onClick={() => setMoveOpen(true)} disabled={selectedNoteIds.length === 0}>
                     Move
                   </ToolButton>
@@ -356,6 +418,14 @@ export default function Library({ data, view, query, mode, onMode, isDesktop, ba
                   </ToolButton>
                 </>
               )}
+              {view.kind === 'tag' && tag && !searching && (
+                <>
+                  <ToolButton onClick={() => void renameTag()}>Rename</ToolButton>
+                  <ToolButton onClick={() => void deleteTag()} danger>
+                    <TrashIcon /> Delete tag
+                  </ToolButton>
+                </>
+              )}
               {inBin && sections.length > 0 && (
                 <ToolButton onClick={() => void emptyBin()} danger>
                   <TrashIcon /> Empty bin
@@ -378,6 +448,19 @@ export default function Library({ data, view, query, mode, onMode, isDesktop, ba
                   </button>
                 ))}
               </div>
+              {onEditorMode && (
+                <button
+                  type="button"
+                  onClick={() => onEditorMode(!editorMode)}
+                  aria-pressed={!!editorMode}
+                  aria-label="Editor mode"
+                  title="Editor mode: open notes in a panel on the right (E)"
+                  className="rounded-lg px-3 py-2"
+                  style={editorMode ? { background: 'var(--accent)', color: 'var(--bg)' } : { border: '1px solid var(--border)' }}
+                >
+                  <SplitIcon />
+                </button>
+              )}
               {view.kind !== 'bin' && !searching && isDesktop && (
                 <>
                   {view.kind === 'root' && (
@@ -424,8 +507,10 @@ export default function Library({ data, view, query, mode, onMode, isDesktop, ba
                   bodyToggles={bodyToggles}
                   query={query}
                   tags={data.tags}
+                  active={item.kind === 'note' && item.note.id === activeNoteId}
                   onOpen={() => open(item.key)}
                   onToggle={() => toggle(item.key)}
+                  onLongPress={isDesktop ? undefined : () => startSelectingWith(item.key)}
                 />
               ))}
             </div>

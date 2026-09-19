@@ -1,8 +1,12 @@
+﻿import { EditorContent, useEditor, type JSONContent } from '@tiptap/react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import type { NoteRecord } from '../../shared/sync'
+import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
+import type { DocJson, NoteRecord } from '../../shared/sync'
+import { noteExtensions } from '../editor/extensions'
+import Toolbar from '../editor/Toolbar'
 import { useHotkeys } from '../hotkeys'
-import { useLibraryData } from '../hooks'
+import { useIsDesktop, useLibraryData } from '../hooks'
 import { effectiveFolderId, liveFolders } from '../lib/library'
 import { db, repo } from '../sync/runtime'
 import SyncStatus from './SyncStatus'
@@ -13,21 +17,60 @@ const SAVE_DELAY_MS = 400
 
 type Flush = () => Promise<void>
 
-/** The text fields. Edits are saved to this device ~0.4 s after you stop typing. */
-function Fields({ note, flushRef }: { note: NoteRecord; flushRef: RefObject<Flush> }) {
+/** How many editors currently show each note (a note is only discarded once none do). */
+const openEditors = new Map<string, number>()
+
+/**
+ * The title and the rich-text body. Edits are saved to this device ~0.4 s after you stop
+ * typing. The formatting toolbar goes into `toolbarSlot` (desktop header) or, on a phone,
+ * is pinned to the bottom of the screen, just above the keyboard.
+ */
+function Fields({
+  note,
+  flushRef,
+  toolbarSlot,
+  isDesktop,
+}: {
+  note: NoteRecord
+  flushRef: RefObject<Flush>
+  toolbarSlot: HTMLElement | null
+  isDesktop: boolean
+}) {
   const [title, setTitle] = useState(note.title)
-  const [text, setText] = useState(note.contentText)
-  const latest = useRef({ title: note.title, text: note.contentText })
+  const latest = useRef({ title: note.title, content: note.content })
   const dirty = useRef(false) // typed, but not saved yet
   const timer = useRef<number | undefined>(undefined)
-  const area = useRef<HTMLTextAreaElement>(null)
 
   const save = useCallback<Flush>(async () => {
     window.clearTimeout(timer.current)
     if (!dirty.current) return
     dirty.current = false
-    await repo.setNoteText(note.id, latest.current.title, latest.current.text)
+    await repo.setNoteContent(note.id, latest.current.title, latest.current.content)
   }, [note.id])
+
+  const scheduleSave = useCallback(() => {
+    dirty.current = true
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => void save(), SAVE_DELAY_MS)
+  }, [save])
+  // The editor keeps its first onUpdate callback, so it reaches the latest one through a ref.
+  const scheduleRef = useRef(scheduleSave)
+  useEffect(() => {
+    scheduleRef.current = scheduleSave
+  }, [scheduleSave])
+
+  const editor = useEditor({
+    extensions: noteExtensions,
+    content: note.content as JSONContent,
+    shouldRerenderOnTransaction: false,
+    editorProps: {
+      attributes: { class: 'note-content', 'aria-label': 'Note text', role: 'textbox', 'aria-multiline': 'true' },
+    },
+    onUpdate: ({ editor: e }) => {
+      latest.current.content = e.getJSON() as DocJson
+      scheduleRef.current()
+    },
+  })
 
   useEffect(() => {
     flushRef.current = save
@@ -35,6 +78,8 @@ function Fields({ note, flushRef }: { note: NoteRecord; flushRef: RefObject<Flus
 
   // Save when the tab is hidden or closed, and when leaving the editor.
   useEffect(() => {
+    const id = note.id
+    openEditors.set(id, (openEditors.get(id) ?? 0) + 1)
     const onHide = () => {
       if (document.visibilityState === 'hidden') void save()
     }
@@ -43,55 +88,67 @@ function Fields({ note, flushRef }: { note: NoteRecord; flushRef: RefObject<Flus
     return () => {
       document.removeEventListener('visibilitychange', onHide)
       window.removeEventListener('pagehide', save)
-      void save()
+      openEditors.set(id, (openEditors.get(id) ?? 1) - 1)
+      // A note you opened and left blank is not worth keeping. The check runs after the
+      // final save, and only if no editor re-opened the note in the meantime.
+      void save().then(() => {
+        if (!openEditors.get(id)) void repo.discardIfEmpty(id)
+      })
     }
-  }, [save])
+  }, [save, note.id])
 
-  // Show changes that arrive from another device, unless you are mid-edit.
+  // Show changes that arrive from another device (or a rename), unless you are mid-edit.
   useEffect(() => {
-    if (dirty.current) return
-    if (note.title !== latest.current.title || note.contentText !== latest.current.text) {
-      latest.current = { title: note.title, text: note.contentText }
+    if (dirty.current || !editor) return
+    if (note.title !== latest.current.title) {
+      latest.current.title = note.title
       setTitle(note.title)
-      setText(note.contentText)
     }
-  }, [note.title, note.contentText])
+    if (JSON.stringify(note.content) !== JSON.stringify(latest.current.content)) {
+      latest.current.content = note.content
+      editor.commands.setContent(note.content as JSONContent, { emitUpdate: false })
+    }
+  }, [note.title, note.content, editor])
 
-  // Grow the text box with its content, so the whole page scrolls as one.
-  useLayoutEffect(() => {
-    const el = area.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
-  }, [text])
-
-  function edit(nextTitle: string, nextText: string) {
-    latest.current = { title: nextTitle, text: nextText }
-    dirty.current = true
-    setTitle(nextTitle)
-    setText(nextText)
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => void save(), SAVE_DELAY_MS)
+  function editTitle(next: string) {
+    latest.current.title = next
+    setTitle(next)
+    scheduleSave()
   }
+
+  const toolbar = editor ? <Toolbar editor={editor} placement={isDesktop ? 'top' : 'bottom'} /> : null
 
   return (
     <>
       <input
         value={title}
-        onChange={(e) => edit(e.target.value, text)}
+        onChange={(e) => editTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            editor?.commands.focus('start')
+          }
+        }}
         placeholder="Title"
         aria-label="Note title"
         maxLength={1000}
         className="w-full bg-transparent text-2xl font-semibold outline-none"
       />
-      <textarea
-        ref={area}
-        value={text}
-        onChange={(e) => edit(title, e.target.value)}
-        placeholder="Start writing…"
-        aria-label="Note text"
-        className="min-h-[50vh] w-full resize-none bg-transparent text-base leading-relaxed outline-none"
-      />
+      <EditorContent editor={editor} className="min-h-[50vh]" />
+      {isDesktop
+        ? toolbarSlot && createPortal(toolbar, toolbarSlot)
+        : toolbar && (
+            <div
+              className="fixed inset-x-0 bottom-0 z-20"
+              style={{
+                background: 'var(--bg)',
+                borderTop: '1px solid var(--border)',
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }}
+            >
+              {toolbar}
+            </div>
+          )}
     </>
   )
 }
@@ -183,30 +240,36 @@ function NoteMeta({ note }: { note: NoteRecord }) {
   )
 }
 
-export default function NoteEditor({ id, onClose }: { id: string; onClose: () => void }) {
+/**
+ * Edits one note. Full screen, it takes part in history so the device's Back button
+ * returns to the list. `embedded` (desktop editor mode) shows it as a side panel instead.
+ */
+export default function NoteEditor({ id, onClose, embedded = false }: { id: string; onClose: () => void; embedded?: boolean }) {
   const dialogs = useDialogs()
   // undefined while loading, null if the note no longer exists.
   const note = useLiveQuery(async () => (await db.notes.get(id)) ?? null, [id])
   const flushRef = useRef<Flush>(async () => {})
+  const pane = useRef<HTMLDivElement>(null)
+  const isDesktop = useIsDesktop()
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null)
 
-  // The device's Back button (and the browser's) returns to the list instead of leaving the app.
+  // Full screen: the device's Back button (and the browser's) returns to the list.
   useEffect(() => {
+    if (embedded) return
     if ((history.state as { noteId?: string } | null)?.noteId !== id) {
       history.pushState({ noteId: id }, '')
     }
-    const onPop = () => {
-      const saved = flushRef.current()
-      onClose()
-      // A note you opened and left blank is not worth keeping.
-      void saved.then(() => repo.discardIfEmpty(id))
-    }
+    const onPop = () => onClose()
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
-  }, [id, onClose])
+  }, [id, onClose, embedded])
+
+  const close = () => (embedded ? onClose() : history.back())
 
   useEffect(() => {
-    if (note === null) onClose()
-  }, [note, onClose])
+    // Gone (deleted for good elsewhere), or moved to the bin while open in the side panel.
+    if (note === null || (embedded && note?.deletedAt != null)) onClose()
+  }, [note, onClose, embedded])
 
   async function trash() {
     const ok = await dialogs.confirm({
@@ -218,31 +281,44 @@ export default function NoteEditor({ id, onClose }: { id: string; onClose: () =>
     if (!ok) return
     await flushRef.current()
     await repo.trashNotes([id])
-    history.back()
+    close()
   }
 
+  // In the side panel these keys belong to the note only while you are working inside it.
+  const inPane = (e: KeyboardEvent) => !embedded || !!pane.current?.contains(e.target as Node)
   useHotkeys([
-    { keys: 'escape', run: () => history.back(), inInput: true },
-    { keys: 'mod+s', run: () => void flushRef.current(), inInput: true },
+    { keys: 'escape', run: close, inInput: true, when: inPane },
+    { keys: 'mod+s', run: () => void flushRef.current(), inInput: true, when: inPane },
   ])
 
   const buttonClass = 'flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm'
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-3 pb-24">
+    <div ref={pane} className={`flex flex-col gap-3 pb-28 ${embedded ? '' : 'mx-auto max-w-3xl'}`}>
       <header
-        className="sticky top-0 z-10 -mx-4 flex items-center justify-between gap-3 px-4 py-3 md:-mx-6 md:px-6"
+        className="sticky top-0 z-10 -mx-4 flex flex-col px-4 md:-mx-6 md:px-6"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
-        <button type="button" onClick={() => history.back()} className={buttonClass} style={{ border: '1px solid var(--border)' }}>
-          <BackIcon /> Back
-        </button>
-        <SyncStatus />
-        <button type="button" onClick={() => void trash()} className={buttonClass} style={{ border: '1px solid var(--border)', color: 'var(--danger)' }}>
-          <TrashIcon /> Delete
-        </button>
+        <div className="flex items-center justify-between gap-3 py-3">
+          <button type="button" onClick={close} className={buttonClass} style={{ border: '1px solid var(--border)' }}>
+            {embedded ? (
+              <>
+                <CloseIcon /> Close
+              </>
+            ) : (
+              <>
+                <BackIcon /> Back
+              </>
+            )}
+          </button>
+          <SyncStatus />
+          <button type="button" onClick={() => void trash()} className={buttonClass} style={{ border: '1px solid var(--border)', color: 'var(--danger)' }}>
+            <TrashIcon /> Delete
+          </button>
+        </div>
+        {isDesktop && <div ref={setToolbarSlot} className="-mx-1 pb-1" />}
       </header>
-      {note && <NoteMeta note={note} />}
-      {note && <Fields key={id} note={note} flushRef={flushRef} />}
+      {note?.id === id && <NoteMeta note={note} />}
+      {note?.id === id && <Fields key={id} note={note} flushRef={flushRef} toolbarSlot={toolbarSlot} isDesktop={isDesktop} />}
     </div>
   )
 }

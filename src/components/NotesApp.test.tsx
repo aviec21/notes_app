@@ -23,6 +23,10 @@ function setScreen(desktop: boolean) {
 }
 
 beforeAll(() => {
+  const rect = { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, toJSON: () => ({}) }
+  Range.prototype.getBoundingClientRect = () => rect as DOMRect
+  Range.prototype.getClientRects = () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as unknown as DOMRectList
+  document.elementFromPoint = () => null
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute('open', '')
   }
@@ -133,6 +137,68 @@ describe('desktop layout', () => {
     expect(Number(handle.getAttribute('aria-valuenow'))).toBe(200)
   })
 
+  it('offers Settings, Keyboard shortcuts and How to use in the sidebar', async () => {
+    render(app())
+    const sidebar = await screen.findByRole('navigation', { name: 'Library' })
+    expect(within(sidebar).getByRole('button', { name: /Settings/ })).toBeTruthy()
+    expect(within(sidebar).getByRole('button', { name: /Keyboard shortcuts/ })).toBeTruthy()
+    expect(within(sidebar).getByRole('button', { name: /How to use/ })).toBeTruthy()
+  })
+
+  it('searches the How to use guide', async () => {
+    const user = userEvent.setup()
+    render(app())
+    const sidebar = await screen.findByRole('navigation', { name: 'Library' })
+    await user.click(within(sidebar).getByRole('button', { name: /How to use/ }))
+    const dialog = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('dialog[open]')
+      if (!el) throw new Error('no dialog')
+      return el
+    })
+    await user.type(within(dialog).getByRole('searchbox', { hidden: true }), 'RESTOR')
+    expect(within(dialog).getByText('Restore from the recycle bin')).toBeTruthy()
+    expect(within(dialog).queryByText('Light and dark theme')).toBeNull()
+  })
+
+  it('filters the keyboard shortcuts by search', async () => {
+    const user = userEvent.setup()
+    render(app())
+    await screen.findByRole('navigation', { name: 'Library' })
+    await user.keyboard('?')
+    const dialog = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('dialog[open]')
+      if (!el) throw new Error('no dialog')
+      return el
+    })
+    await user.type(within(dialog).getByRole('searchbox', { hidden: true }), 'rename')
+    expect(within(dialog).getByText('F2')).toBeTruthy()
+    expect(within(dialog).queryByText('Bold')).toBeNull()
+  })
+
+  it('in editor mode, opens a note in a side panel next to the list', async () => {
+    const user = userEvent.setup()
+    render(app())
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    const panel = await screen.findByRole('region', { name: 'Open note' })
+    expect(await within(panel).findByRole('textbox', { name: 'Note title' })).toBeTruthy()
+    // The list is still there, with the open note marked.
+    expect(screen.getByRole('button', { name: /Groceries/, current: true })).toBeTruthy()
+
+    await user.click(within(panel).getByRole('button', { name: /Close/ }))
+    expect(screen.queryByRole('region', { name: 'Open note' })).toBeNull()
+  })
+
+  it('opens notes full width when editor mode is off, and remembers the choice', async () => {
+    const user = userEvent.setup()
+    render(app())
+    await user.click(await screen.findByRole('button', { name: 'Editor mode' }))
+    expect(localStorage.getItem('notes.editorMode')).toBe('off')
+    await user.click(screen.getByRole('button', { name: /Groceries/ }))
+    expect(await screen.findByRole('textbox', { name: 'Note title' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Open note' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Groceries/ })).toBeNull() // list replaced
+  })
+
   it('warns about the default PIN with a way to change it', async () => {
     render(app(true))
     expect(await screen.findByText(/still using the default PIN/)).toBeTruthy()
@@ -150,6 +216,27 @@ describe('phone layout', () => {
     expect(screen.queryByRole('separator')).toBeNull()
     expect(screen.getByRole('button', { name: 'Recycle bin' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '#urgent' })).toBeTruthy()
+  })
+
+  it('has a menu with Settings, How to use and Keyboard shortcuts', async () => {
+    const user = userEvent.setup()
+    render(app())
+    await user.click(await screen.findByRole('button', { name: 'Menu' }))
+    const menu = screen.getByRole('menu', { name: 'Menu' })
+    expect(within(menu).getByRole('menuitem', { name: /Settings/ })).toBeTruthy()
+    expect(within(menu).getByRole('menuitem', { name: /Keyboard shortcuts/ })).toBeTruthy()
+    await user.click(within(menu).getByRole('menuitem', { name: /How to use/ }))
+    await waitFor(() => expect(document.querySelector('dialog[open]')?.textContent).toContain('How to use'))
+  })
+
+  it('never uses editor mode: notes open full screen', async () => {
+    localStorage.setItem('notes.editorMode', 'on')
+    const user = userEvent.setup()
+    render(app())
+    expect(screen.queryByRole('button', { name: 'Editor mode' })).toBeNull()
+    await user.click(await screen.findByRole('button', { name: /Groceries/ }))
+    expect(await screen.findByRole('textbox', { name: 'Note title' })).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Open note' })).toBeNull()
   })
 
   it('shows folders in the main list so they can be opened', async () => {

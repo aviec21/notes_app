@@ -12,7 +12,7 @@ import { repo } from '../sync/runtime'
 import SearchBox from './SearchBox'
 import SyncStatus from './SyncStatus'
 import { useDialogs } from './ui/Dialogs'
-import { FolderIcon, NoteIcon, PinIcon, PlusIcon, SettingsIcon, TagIcon, TrashIcon } from './ui/Icons'
+import { FolderIcon, HelpIcon, KeyboardIcon, NoteIcon, PinIcon, PlusIcon, SettingsIcon, TagIcon, TrashIcon } from './ui/Icons'
 
 function NavItem({
   active,
@@ -71,10 +71,11 @@ interface Props {
   onQuery: (query: string) => void
   onOpenSettings: () => void
   onOpenShortcuts: () => void
+  onOpenGuide: () => void
 }
 
 /** Desktop side panel: search, folders, tags and the recycle bin. Scrolls on its own. */
-export default function Sidebar({ data, view, query, searchRef, onNavigate, onQuery, onOpenSettings, onOpenShortcuts }: Props) {
+export default function Sidebar({ data, view, query, searchRef, onNavigate, onQuery, onOpenSettings, onOpenShortcuts, onOpenGuide }: Props) {
   const dialogs = useDialogs()
   const searching = query.trim().length > 0
 
@@ -199,14 +200,15 @@ export default function Sidebar({ data, view, query, searchRef, onNavigate, onQu
           label="Recycle bin"
           count={binCount}
         />
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={onOpenSettings} className="flex flex-1 items-center gap-2.5 rounded-lg px-3 py-2 text-sm">
-            <SettingsIcon /> Settings
-          </button>
-          <button type="button" onClick={onOpenShortcuts} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" className="rounded-lg px-3 py-2 text-sm">
-            ?
-          </button>
-        </div>
+        <button type="button" onClick={onOpenSettings} className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm">
+          <SettingsIcon /> Settings
+        </button>
+        <button type="button" onClick={onOpenShortcuts} title="Keyboard shortcuts (?)" className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm">
+          <KeyboardIcon /> Keyboard shortcuts
+        </button>
+        <button type="button" onClick={onOpenGuide} className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm">
+          <HelpIcon /> How to use
+        </button>
       </div>
     </nav>
   )

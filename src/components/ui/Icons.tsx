@@ -81,6 +81,29 @@ export const CloseIcon = () => (
     <path d="M18 6 6 18M6 6l12 12" />
   </Icon>
 )
+export const SplitIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M12 4v16" />
+  </Icon>
+)
+export const MenuIcon = () => (
+  <Icon>
+    <path d="M4 6h16M4 12h16M4 18h16" />
+  </Icon>
+)
+export const HelpIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01" />
+  </Icon>
+)
+export const KeyboardIcon = () => (
+  <Icon>
+    <rect x="2" y="6" width="20" height="12" rx="2" />
+    <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
+  </Icon>
+)
 export const BackIcon = () => (
   <Icon>
     <path d="m15 18-6-6 6-6" />

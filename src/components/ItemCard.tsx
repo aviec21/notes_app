@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import { useEffect, useRef, type MouseEvent, type PointerEvent } from 'react'
 import type { TagRecord } from '../../shared/sync'
 import { snippetAround, type Item } from '../lib/library'
 import { FolderIcon, PinIcon } from './ui/Icons'
@@ -22,12 +22,47 @@ interface Props {
   bodyToggles: boolean
   query: string
   tags: TagRecord[]
+  /** Whether this note is the one open in the side editor (desktop editor mode). */
+  active?: boolean
   onOpen: () => void
   onToggle: () => void
+  /** Touch-and-hold (phones): starts selecting, like the Select button. */
+  onLongPress?: () => void
 }
 
+const LONG_PRESS_MS = 500
+const MOVE_TOLERANCE_PX = 10
+
 /** One note or folder, as a row (list mode) or a card (grid mode). */
-export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggles, query, tags, onOpen, onToggle }: Props) {
+export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggles, query, tags, active, onOpen, onToggle, onLongPress }: Props) {
+  const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null)
+  const cancelPress = () => {
+    if (press.current) window.clearTimeout(press.current.timer)
+  }
+  useEffect(() => cancelPress, [])
+
+  const longPressHandlers = onLongPress
+    ? {
+        onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
+          if (e.pointerType === 'mouse') return
+          cancelPress()
+          const state = { x: e.clientX, y: e.clientY, fired: false, timer: 0 }
+          state.timer = window.setTimeout(() => {
+            state.fired = true
+            navigator.vibrate?.(15)
+            onLongPress()
+          }, LONG_PRESS_MS)
+          press.current = state
+        },
+        onPointerMove: (e: PointerEvent<HTMLButtonElement>) => {
+          const p = press.current
+          if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > MOVE_TOLERANCE_PX) cancelPress()
+        },
+        onPointerUp: cancelPress,
+        onPointerCancel: cancelPress, // the finger started scrolling
+        onContextMenu: (e: MouseEvent) => e.preventDefault(), // no browser menu on hold
+      }
+    : {}
   const isNote = item.kind === 'note'
   const title = isNote ? item.note.title.trim() || 'Untitled' : item.folder.name
   const pinned = isNote ? item.note.pinned : item.folder.pinned
@@ -42,6 +77,11 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
   const meta = item.daysLeft !== undefined ? `${plural(item.daysLeft, 'day')} left` : formatWhen(when)
 
   function onBodyClick(event: MouseEvent) {
+    // The click that ends a long press must not also open or toggle the item.
+    if (press.current?.fired) {
+      press.current = null
+      return
+    }
     // Ctrl/Cmd/Shift-click always picks (desktop convention), otherwise open or pick.
     if (event.ctrlKey || event.metaKey || event.shiftKey || bodyToggles) onToggle()
     else onOpen()
@@ -53,8 +93,8 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
       className={`relative rounded-xl ${grid ? 'h-full' : ''}`}
       style={{
         background: 'var(--surface)',
-        border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
-        boxShadow: selected ? '0 0 0 1px var(--accent)' : undefined,
+        border: `1px solid ${selected || active ? 'var(--accent)' : 'var(--border)'}`,
+        boxShadow: selected ? '0 0 0 1px var(--accent)' : active ? 'inset 3px 0 0 var(--accent)' : undefined,
       }}
     >
       {showCheckbox && (
@@ -71,7 +111,9 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
         type="button"
         onClick={onBodyClick}
         onDoubleClick={(e) => e.preventDefault()}
-        className={`block h-full w-full rounded-xl py-3 pr-3 text-left select-none ${showCheckbox ? 'pl-10' : 'pl-3'}`}
+        {...longPressHandlers}
+        aria-current={active ? 'true' : undefined}
+        className={`block h-full w-full rounded-xl py-3 pr-3 text-left select-none [-webkit-touch-callout:none] ${showCheckbox ? 'pl-10' : 'pl-3'}`}
       >
         <span className="flex items-center gap-2">
           {!isNote && <FolderIcon />}
