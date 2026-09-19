@@ -143,6 +143,25 @@ describe.each([
     expect(pulled.purged).toEqual([{ entity: 'note', id }])
   })
 
+  it('purges only items binned before the cutoff and tells devices via tombstones', async () => {
+    const store = await makeStore()
+    const [oldNote, recentNote, liveNote, oldFolder] = [uuid(), uuid(), uuid(), uuid()]
+    applied(await processOp(store, op('note', oldNote, noteFields('old', { deletedAt: 1_000 }), null)))
+    applied(await processOp(store, op('note', recentNote, noteFields('recent', { deletedAt: 9_000 }), null)))
+    applied(await processOp(store, op('note', liveNote, noteFields('live'), null)))
+    applied(await processOp(store, op('folder', oldFolder, { name: 'Old folder', deletedAt: 2_000 }, null)))
+
+    expect(await store.purgeExpired(5_000)).toBe(2)
+
+    expect(await store.get('note', oldNote)).toBeNull()
+    expect(await store.get('folder', oldFolder)).toBeNull()
+    expect(await store.get('note', recentNote)).not.toBeNull()
+    expect(await store.get('note', liveNote)).not.toBeNull()
+    const pulled = await pullChanges(store, 0, 100)
+    expect(pulled.purged.map((p) => p.id).sort()).toEqual([oldNote, oldFolder].sort())
+    expect(await store.purgeExpired(5_000)).toBe(0) // nothing left to purge
+  })
+
   it('rejects malformed changes instead of storing them', async () => {
     const store = await makeStore()
     const id = uuid()

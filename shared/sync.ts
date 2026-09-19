@@ -112,5 +112,8 @@ export interface PullResponse {
   purged: { entity: EntityName; id: string }[]
 }
 
+/** Items stay in the recycle bin this long before the daily job deletes them for good. */
+export const BIN_RETENTION_DAYS = 30
+
 export const MAX_OPS_PER_PUSH = 25
 export const PULL_PAGE_SIZE = 100

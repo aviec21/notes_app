@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useNotes, usePendingCount } from '../hooks'
-import { repo, startSync } from '../sync/runtime'
-import { useTheme } from '../theme'
-import ChangePin from './ChangePin'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useIsDesktop, useLibraryData, usePersistentChoice } from '../hooks'
+import { useHotkeys } from '../hotkeys'
+import type { View } from '../lib/library'
+import { useSidebarWidth } from '../sidebarWidth'
+import { startSync } from '../sync/runtime'
+import Library, { type ViewMode } from './Library'
+import MobileNav from './MobileNav'
 import NoteEditor from './NoteEditor'
-import NoteList from './NoteList'
-import SyncStatus from './SyncStatus'
-
-const THEME_LABEL = { system: 'System', light: 'Light', dark: 'Dark' } as const
-const card = { background: 'var(--surface)', border: '1px solid var(--border)' }
+import SettingsDialog from './SettingsDialog'
+import ShortcutsHelp from './ShortcutsHelp'
+import Sidebar from './Sidebar'
 
 interface Props {
   defaultPin: boolean
@@ -18,92 +19,119 @@ interface Props {
 }
 
 export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauthorized }: Props) {
-  const notes = useNotes()
-  const pending = usePendingCount()
-  const { theme, cycle } = useTheme()
+  const data = useLibraryData()
+  const isDesktop = useIsDesktop()
+  const [view, setView] = useState<View>({ kind: 'root' })
+  const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
-  const [showSettings, setShowSettings] = useState(defaultPin)
+  const [mode, setMode] = usePersistentChoice<ViewMode>('notes.viewMode', 'list', ['list', 'grid'])
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const { width, separatorProps } = useSidebarWidth()
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const closeEditor = useCallback(() => setOpenId(null), [])
-
   useEffect(() => startSync(onUnauthorized), [onUnauthorized])
 
-  async function newNote() {
-    setOpenId(await repo.createNote())
+  // Leaving the editor goes through history so its Back-button handling saves first.
+  const leaveEditor = () => {
+    if (openId) history.back()
+  }
+  const navigate = (next: View) => {
+    setQuery('')
+    setView(next)
+    leaveEditor()
+  }
+  const changeQuery = (next: string) => {
+    setQuery(next)
+    if (next) leaveEditor()
   }
 
-  function signOut() {
-    const warning =
-      `${pending} change${pending === 1 ? ' has' : 's have'} not synced yet. ` +
-      'They stay on this device, but will not reach your other devices until you sign in and sync again. Sign out anyway?'
-    if (pending > 0 && !window.confirm(warning)) return
-    onSignOut()
-  }
+  useHotkeys(
+    [
+      { keys: ['/', 'mod+k'], run: () => searchRef.current?.focus(), inInput: false },
+      { keys: 'mod+k', run: () => searchRef.current?.focus(), inInput: true },
+      { keys: '?', run: () => setHelpOpen(true) },
+    ],
+    isDesktop,
+  )
 
-  if (openId) return <NoteEditor id={openId} onClose={closeEditor} />
+  const banner = defaultPin ? (
+    <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl p-3 text-sm" style={{ border: '1px solid var(--accent)' }}>
+      <span>
+        <strong>You are still using the default PIN.</strong> Anyone who finds this address could open your notes.
+      </span>
+      <button type="button" onClick={() => setSettingsOpen(true)} className="rounded-lg px-3 py-1.5 font-medium" style={{ background: 'var(--accent)', color: 'var(--bg)' }}>
+        Change PIN
+      </button>
+    </div>
+  ) : undefined
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-4 px-4 pb-28">
-      <header
-        className="sticky top-0 z-10 -mx-4 flex items-center justify-between gap-3 px-4 py-3"
-        style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
-      >
-        <div className="flex flex-col">
-          <h1 className="text-xl font-semibold">Notes</h1>
-          <SyncStatus />
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowSettings((v) => !v)}
-          aria-expanded={showSettings}
-          className="rounded-lg px-3 py-2 text-sm"
-          style={{ border: '1px solid var(--border)' }}
-        >
-          Settings
-        </button>
-      </header>
-
-      {showSettings && (
-        <section className="flex flex-col gap-4">
-          {defaultPin && (
-            <div role="alert" className="rounded-xl p-4 text-sm" style={{ ...card, borderColor: 'var(--accent)' }}>
-              <strong>You are still using the default PIN.</strong> Anyone who finds this address could
-              open your notes. Change it below.
-            </div>
-          )}
-          <div className="flex gap-3">
-            <button type="button" onClick={cycle} className="rounded-lg px-3 py-2 text-sm" style={card}>
-              Theme: {THEME_LABEL[theme]}
-            </button>
-            <button type="button" onClick={signOut} className="rounded-lg px-3 py-2 text-sm" style={card}>
-              Sign out
-            </button>
-          </div>
-          <ChangePin onChanged={onPinChanged} />
-        </section>
+    <div className="flex min-h-screen">
+      {isDesktop && data && (
+        <>
+          <aside className="sticky top-0 h-screen shrink-0" style={{ width, borderRight: '1px solid var(--border)' }}>
+            <Sidebar
+              data={data}
+              view={view}
+              query={query}
+              searchRef={searchRef}
+              onNavigate={navigate}
+              onQuery={changeQuery}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenShortcuts={() => setHelpOpen(true)}
+            />
+          </aside>
+          <div
+            {...separatorProps}
+            className="sticky top-0 h-screen w-1 shrink-0 cursor-col-resize transition-colors hover:[background:var(--accent)] focus:[background:var(--accent)] focus:outline-none"
+          />
+        </>
       )}
 
-      {notes === undefined ? (
-        <p className="py-16 text-center" style={{ color: 'var(--muted)' }}>
-          Loading…
-        </p>
-      ) : (
-        <NoteList notes={notes} onOpen={setOpenId} />
-      )}
+      <main className="min-w-0 flex-1 px-4 md:px-6">
+        {!isDesktop && !openId && data && (
+          <MobileNav
+            data={data}
+            view={view}
+            query={query}
+            searchRef={searchRef}
+            onNavigate={navigate}
+            onQuery={changeQuery}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        )}
+        {data === undefined ? (
+          <p className="py-16 text-center" style={{ color: 'var(--muted)' }}>
+            Loading…
+          </p>
+        ) : openId ? (
+          <NoteEditor id={openId} onClose={closeEditor} />
+        ) : (
+          <Library
+            data={data}
+            view={view}
+            query={query}
+            mode={mode}
+            onMode={setMode}
+            isDesktop={isDesktop}
+            banner={banner}
+            onNavigate={navigate}
+            onClearQuery={() => setQuery('')}
+            onOpenNote={setOpenId}
+          />
+        )}
+      </main>
 
-      <button
-        type="button"
-        onClick={() => void newNote()}
-        aria-label="New note"
-        className="fixed right-4 flex h-14 w-14 items-center justify-center rounded-full text-3xl shadow-lg"
-        style={{
-          background: 'var(--accent)',
-          color: 'var(--bg)',
-          bottom: 'max(1rem, env(safe-area-inset-bottom))',
-        }}
-      >
-        +
-      </button>
-    </main>
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        defaultPin={defaultPin}
+        onSignOut={onSignOut}
+        onPinChanged={onPinChanged}
+      />
+      <ShortcutsHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+    </div>
   )
 }

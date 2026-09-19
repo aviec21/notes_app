@@ -1,4 +1,11 @@
-import { fieldsOf, type EntityName, type NoteRecord, type RecordByEntity } from '../../shared/sync'
+import {
+  fieldsOf,
+  type EntityName,
+  type FolderRecord,
+  type NoteRecord,
+  type RecordByEntity,
+  type TagRecord,
+} from '../../shared/sync'
 import { textToDoc } from '../lib/doc'
 import type { LocalRecord, NotesDB } from './db'
 
@@ -153,14 +160,171 @@ export class Repo {
     return this.update('note', id, { title, content: textToDoc(text), contentText: text })
   }
 
-  /** Moves a note to the recycle bin (restore/empty arrive with the bin screen). */
-  trashNote(id: string) {
-    return this.update('note', id, { deletedAt: Date.now(), deleteBatch: crypto.randomUUID() })
-  }
-
   /** Removes a note that was created but never given any content. */
   async discardIfEmpty(id: string): Promise<void> {
     const note = await this.db.notes.get(id)
     if (note && !note.title.trim() && !note.contentText.trim()) await this.purge('note', id)
   }
+
+  moveNotes(ids: string[], folderId: string | null) {
+    return this.each(ids, (id) => this.update('note', id, { folderId }))
+  }
+
+  setNoteTags(id: string, tagIds: string[]) {
+    return this.update('note', id, { tagIds })
+  }
+
+  /** Adds (or removes) one tag on several notes at once. */
+  async tagNotes(ids: string[], tagId: string, on: boolean): Promise<void> {
+    await this.each(ids, async (id) => {
+      const note = await this.db.notes.get(id)
+      if (!note) return
+      const has = note.tagIds.includes(tagId)
+      if (on && !has) await this.update('note', id, { tagIds: [...note.tagIds, tagId] })
+      if (!on && has) await this.update('note', id, { tagIds: note.tagIds.filter((t) => t !== tagId) })
+    })
+  }
+
+  // --- folders -----------------------------------------------------------------------
+
+  async createFolder(name: string): Promise<string> {
+    const now = Date.now()
+    const folder: FolderRecord = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      color: null,
+      pinned: false,
+      pinnedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      deleteBatch: null,
+    }
+    await this.create('folder', folder)
+    return folder.id
+  }
+
+  renameFolder(id: string, name: string) {
+    return this.update('folder', id, { name: name.trim() })
+  }
+
+  // --- pin ---------------------------------------------------------------------------
+
+  setPinned(items: ItemRef[], pinned: boolean): Promise<void> {
+    const pinnedAt = pinned ? Date.now() : null
+    return this.each(items, async ({ entity, id }) => {
+      await this.update(entity, id, { pinned, pinnedAt })
+    })
+  }
+
+  // --- tags --------------------------------------------------------------------------
+
+  /** Creates a tag, or returns the existing one with the same name (ignoring case). */
+  async createTag(name: string): Promise<string> {
+    const wanted = name.trim()
+    const existing = await this.db.tags.filter((t) => t.name.toLowerCase() === wanted.toLowerCase()).first()
+    if (existing) return existing.id
+    const now = Date.now()
+    const tag: TagRecord = { id: crypto.randomUUID(), name: wanted, color: null, createdAt: now, updatedAt: now }
+    await this.create('tag', tag)
+    return tag.id
+  }
+
+  renameTag(id: string, name: string) {
+    return this.update('tag', id, { name: name.trim() })
+  }
+
+  /** Deletes a tag for good and takes it off every note. (Tags do not go to the bin.) */
+  async deleteTag(id: string): Promise<void> {
+    const tagged = await this.db.notes.filter((n) => n.tagIds.includes(id)).toArray()
+    await this.each(tagged, (n) => this.update('note', n.id, { tagIds: n.tagIds.filter((t) => t !== id) }))
+    await this.purge('tag', id)
+  }
+
+  // --- recycle bin -------------------------------------------------------------------
+
+  trashNotes(ids: string[]) {
+    const deletedAt = Date.now()
+    return this.each(ids, (id) => this.update('note', id, { deletedAt, deleteBatch: crypto.randomUUID() }))
+  }
+
+  /** Bins folders together with the notes inside them, as one group that restores together. */
+  async trashFolders(ids: string[]): Promise<void> {
+    const deletedAt = Date.now()
+    await this.each(ids, async (id) => {
+      const deleteBatch = crypto.randomUUID()
+      const inside = await this.db.notes.where('folderId').equals(id).filter((n) => n.deletedAt === null).toArray()
+      await this.update('folder', id, { deletedAt, deleteBatch })
+      await this.each(inside, (n) => this.update('note', n.id, { deletedAt, deleteBatch }))
+    })
+  }
+
+  /** Trashes a mixed selection of notes and folders. */
+  async trash(items: ItemRef[]): Promise<void> {
+    await this.trashFolders(items.filter((i) => i.entity === 'folder').map((i) => i.id))
+    await this.trashNotes(items.filter((i) => i.entity === 'note').map((i) => i.id))
+  }
+
+  /**
+   * Brings items back. A folder returns with the notes that were binned with it; a note
+   * whose folder is still binned (or gone) comes back as a note not in any folder.
+   */
+  async restore(items: ItemRef[]): Promise<void> {
+    for (const { id } of items.filter((i) => i.entity === 'folder')) {
+      const folder = await this.db.folders.get(id)
+      if (!folder) continue
+      const batch = folder.deleteBatch
+      await this.update('folder', id, { deletedAt: null, deleteBatch: null })
+      if (!batch) continue
+      const together = await this.db.notes
+        .filter((n) => n.deletedAt !== null && n.deleteBatch === batch && n.folderId === id)
+        .toArray()
+      await this.each(together, (n) => this.update('note', n.id, { deletedAt: null, deleteBatch: null }))
+    }
+    for (const { id } of items.filter((i) => i.entity === 'note')) {
+      const note = await this.db.notes.get(id)
+      if (!note) continue
+      const home = note.folderId ? await this.db.folders.get(note.folderId) : undefined
+      const homeIsLive = !!home && home.deletedAt === null
+      await this.update('note', id, {
+        deletedAt: null,
+        deleteBatch: null,
+        ...(homeIsLive ? {} : { folderId: null }),
+      })
+    }
+  }
+
+  /** Deletes items for good (a folder takes the notes that were binned with it). */
+  async deleteForever(items: ItemRef[]): Promise<void> {
+    for (const { entity, id } of items) {
+      if (entity === 'folder') {
+        const folder = await this.db.folders.get(id)
+        const batch = folder?.deleteBatch
+        if (batch) {
+          const together = await this.db.notes
+            .filter((n) => n.deletedAt !== null && n.deleteBatch === batch && n.folderId === id)
+            .toArray()
+          await this.each(together, (n) => this.purge('note', n.id))
+        }
+      }
+      await this.purge(entity, id)
+    }
+  }
+
+  async emptyBin(): Promise<void> {
+    const notes = await this.db.notes.filter((n) => n.deletedAt !== null).toArray()
+    const folders = await this.db.folders.filter((f) => f.deletedAt !== null).toArray()
+    await this.each(notes, (n) => this.purge('note', n.id))
+    await this.each(folders, (f) => this.purge('folder', f.id))
+  }
+
+  private async each<T>(list: T[], run: (item: T) => Promise<unknown>): Promise<void> {
+    for (const item of list) await run(item)
+  }
+}
+
+/** A note or folder, by id. */
+export interface ItemRef {
+  entity: 'note' | 'folder'
+  id: string
 }

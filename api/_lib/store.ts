@@ -28,6 +28,8 @@ export interface Store {
   recordApplied(opId: string, rev: number): Promise<void>
   /** Up to `limit` of each kind of change with rev > since, oldest first. */
   changesSince(since: number, limit: number): Promise<ChangesPage>
+  /** Permanently deletes notes and folders binned before `cutoff` (epoch ms). Returns how many. */
+  purgeExpired(cutoff: number): Promise<number>
 }
 
 const TABLE: Record<EntityName, string> = { note: 'notes', folder: 'folders', tag: 'tags' }
@@ -154,6 +156,26 @@ export class PgStore implements Store {
       `INSERT INTO applied_ops (op_id, rev) VALUES ($1::uuid, $2::bigint) ON CONFLICT DO NOTHING`,
       [opId, rev],
     )
+  }
+
+  async purgeExpired(cutoff: number) {
+    let total = 0
+    for (const entity of ['note', 'folder'] as const) {
+      const rows = await this.query(
+        `WITH d AS (
+           DELETE FROM ${TABLE[entity]} WHERE deleted_at IS NOT NULL AND deleted_at < $1::bigint RETURNING id
+         ), t AS (
+           INSERT INTO purged (id, entity, rev)
+           SELECT id, $2::text, nextval('sync_rev_seq') FROM d
+           ON CONFLICT (id) DO UPDATE SET rev = EXCLUDED.rev
+           RETURNING id
+         )
+         SELECT count(*)::int AS n FROM t`,
+        [cutoff, entity],
+      )
+      total += Number(rows[0].n)
+    }
+    return total
   }
 
   async pruneApplied() {

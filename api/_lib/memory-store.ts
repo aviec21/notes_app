@@ -61,6 +61,19 @@ export class MemoryStore implements Store {
     this.applied.set(opId, rev)
   }
 
+  async purgeExpired(cutoff: number) {
+    let total = 0
+    for (const entity of ['note', 'folder'] as const) {
+      for (const row of [...this.tables[entity].values()]) {
+        if (typeof row.deletedAt === 'number' && row.deletedAt < cutoff) {
+          await this.purge(entity, row.id)
+          total++
+        }
+      }
+    }
+    return total
+  }
+
   async changesSince(since: number, limit: number): Promise<ChangesPage> {
     const records: ChangesPage['records'] = []
     for (const entity of Object.keys(this.tables) as EntityName[]) {

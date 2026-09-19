@@ -1,6 +1,7 @@
 import { useAuth } from './auth'
 import LoginScreen from './components/LoginScreen'
 import NotesApp from './components/NotesApp'
+import { DialogProvider } from './components/ui/Dialogs'
 
 export default function App() {
   const { state, signOut, refresh } = useAuth()
@@ -14,11 +15,13 @@ export default function App() {
   }
   if (state.status === 'signedOut') return <LoginScreen onSignedIn={refresh} />
   return (
-    <NotesApp
-      defaultPin={state.defaultPin}
-      onSignOut={signOut}
-      onPinChanged={refresh}
-      onUnauthorized={refresh}
-    />
+    <DialogProvider>
+      <NotesApp
+        defaultPin={state.defaultPin}
+        onSignOut={signOut}
+        onPinChanged={refresh}
+        onUnauthorized={refresh}
+      />
+    </DialogProvider>
   )
 }

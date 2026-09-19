@@ -1,8 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import type { NoteRecord } from '../../shared/sync'
-import SyncStatus from './SyncStatus'
+import { useHotkeys } from '../hotkeys'
+import { useLibraryData } from '../hooks'
+import { effectiveFolderId, liveFolders } from '../lib/library'
 import { db, repo } from '../sync/runtime'
+import SyncStatus from './SyncStatus'
+import { useDialogs } from './ui/Dialogs'
+import { BackIcon, CloseIcon, PinIcon, TrashIcon } from './ui/Icons'
 
 const SAVE_DELAY_MS = 400
 
@@ -85,13 +90,101 @@ function Fields({ note, flushRef }: { note: NoteRecord; flushRef: RefObject<Flus
         onChange={(e) => edit(title, e.target.value)}
         placeholder="Start writing…"
         aria-label="Note text"
-        className="min-h-[60vh] w-full resize-none bg-transparent text-base leading-relaxed outline-none"
+        className="min-h-[50vh] w-full resize-none bg-transparent text-base leading-relaxed outline-none"
       />
     </>
   )
 }
 
+/** Folder, pin and tags for the open note. */
+function NoteMeta({ note }: { note: NoteRecord }) {
+  const data = useLibraryData()
+  const [draft, setDraft] = useState('')
+  const listId = useId()
+  if (!data) return null
+
+  const folders = liveFolders(data).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  const folderId = effectiveFolderId(note, new Set(folders.map((f) => f.id))) ?? ''
+  const noteTags = data.tags.filter((t) => note.tagIds.includes(t.id))
+  const unused = data.tags.filter((t) => !note.tagIds.includes(t.id))
+
+  async function addTag(raw: string) {
+    const name = raw.trim().replace(/^#/, '')
+    if (!name) return
+    const id = await repo.createTag(name)
+    if (!note.tagIds.includes(id)) await repo.setNoteTags(note.id, [...note.tagIds, id])
+    setDraft('')
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <label className="flex items-center gap-2">
+        <span style={{ color: 'var(--muted)' }}>Folder</span>
+        <select
+          value={folderId}
+          onChange={(e) => void repo.moveNotes([note.id], e.target.value || null)}
+          className="rounded-lg px-2 py-1.5"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
+          <option value="">No folder</option>
+          {folders.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <button
+        type="button"
+        onClick={() => void repo.setPinned([{ entity: 'note', id: note.id }], !note.pinned)}
+        aria-pressed={note.pinned}
+        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5"
+        style={note.pinned ? { background: 'var(--accent)', color: 'var(--bg)' } : { border: '1px solid var(--border)' }}
+      >
+        <PinIcon /> {note.pinned ? 'Pinned' : 'Pin'}
+      </button>
+
+      {noteTags.map((tag) => (
+        <span key={tag.id} className="flex items-center gap-1 rounded-full py-0.5 pr-1 pl-2.5" style={{ border: '1px solid var(--border)' }}>
+          #{tag.name}
+          <button
+            type="button"
+            onClick={() => void repo.setNoteTags(note.id, note.tagIds.filter((t) => t !== tag.id))}
+            aria-label={`Remove tag ${tag.name}`}
+            className="rounded-full p-0.5"
+          >
+            <CloseIcon />
+          </button>
+        </span>
+      ))}
+      <input
+        value={draft}
+        list={listId}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault()
+            void addTag(draft)
+          }
+        }}
+        placeholder="+ Add tag"
+        aria-label="Add tag"
+        maxLength={60}
+        className="w-28 rounded-lg bg-transparent px-2 py-1.5 outline-none focus:ring-2"
+        style={{ border: '1px dashed var(--border)' }}
+      />
+      <datalist id={listId}>
+        {unused.map((t) => (
+          <option key={t.id} value={t.name} />
+        ))}
+      </datalist>
+    </div>
+  )
+}
+
 export default function NoteEditor({ id, onClose }: { id: string; onClose: () => void }) {
+  const dialogs = useDialogs()
   // undefined while loading, null if the note no longer exists.
   const note = useLiveQuery(async () => (await db.notes.get(id)) ?? null, [id])
   const flushRef = useRef<Flush>(async () => {})
@@ -116,27 +209,40 @@ export default function NoteEditor({ id, onClose }: { id: string; onClose: () =>
   }, [note, onClose])
 
   async function trash() {
-    if (!window.confirm('Move this note to the recycle bin?')) return
+    const ok = await dialogs.confirm({
+      title: 'Move note to recycle bin?',
+      message: `You can restore it from the recycle bin for 30 days.`,
+      confirmLabel: 'Move to bin',
+      danger: true,
+    })
+    if (!ok) return
     await flushRef.current()
-    await repo.trashNote(id)
+    await repo.trashNotes([id])
     history.back()
   }
 
+  useHotkeys([
+    { keys: 'escape', run: () => history.back(), inInput: true },
+    { keys: 'mod+s', run: () => void flushRef.current(), inInput: true },
+  ])
+
+  const buttonClass = 'flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm'
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-3 px-4 pb-24">
+    <div className="mx-auto flex max-w-3xl flex-col gap-3 pb-24">
       <header
-        className="sticky top-0 z-10 -mx-4 flex items-center justify-between gap-3 px-4 py-3"
+        className="sticky top-0 z-10 -mx-4 flex items-center justify-between gap-3 px-4 py-3 md:-mx-6 md:px-6"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
-        <button type="button" onClick={() => history.back()} className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--border)' }}>
-          ← Back
+        <button type="button" onClick={() => history.back()} className={buttonClass} style={{ border: '1px solid var(--border)' }}>
+          <BackIcon /> Back
         </button>
         <SyncStatus />
-        <button type="button" onClick={() => void trash()} className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--border)' }}>
-          Delete
+        <button type="button" onClick={() => void trash()} className={buttonClass} style={{ border: '1px solid var(--border)', color: 'var(--danger)' }}>
+          <TrashIcon /> Delete
         </button>
       </header>
+      {note && <NoteMeta note={note} />}
       {note && <Fields key={id} note={note} flushRef={flushRef} />}
-    </main>
+    </div>
   )
 }

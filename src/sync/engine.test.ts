@@ -1,4 +1,4 @@
-import 'fake-indexeddb/auto'
+﻿import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 import { MemoryStore } from '../../api/_lib/memory-store.js'
 import { processOp, pullChanges } from '../../api/_lib/sync-core.js'
@@ -162,7 +162,7 @@ describe('syncing between devices', () => {
     await a.engine.syncNow()
     await b.engine.syncNow()
 
-    await a.repo.trashNote(id)
+    await a.repo.trashNotes([id])
     await b.repo.setNoteText(id, 'Old', 'last-minute edit')
     await a.engine.syncNow()
     await b.engine.syncNow()
