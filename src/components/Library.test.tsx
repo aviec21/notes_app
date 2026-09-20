@@ -364,6 +364,100 @@ describe('exporting the selection', () => {
   })
 })
 
+describe('search results', () => {
+  it('mark the matched words in the title and the preview', async () => {
+    await seed()
+    const user = userEvent.setup()
+    const data = await load()
+    render(
+      <DialogProvider>
+        <Library
+          data={data}
+          view={{ kind: 'root' }}
+          query="EGG"
+          mode="list"
+          onMode={() => {}}
+          isDesktop
+          onNavigate={() => {}}
+          onClearQuery={() => {}}
+          onOpenNote={() => {}}
+        />
+      </DialogProvider>,
+    )
+    void user
+    const card = screen.getByRole('button', { name: /Groceries/ })
+    const marks = [...card.querySelectorAll('mark')].map((m) => m.textContent)
+    expect(marks).toEqual(['eggs'.slice(0, 3)]) // "milk and eggs": the matched letters, in the note's own capitals
+  })
+
+  it('keep the preview close to the match, so it stays visible on a narrow row', async () => {
+    const id = await repo.createNote()
+    await repo.setNoteText(id, 'Long', `${'filler '.repeat(60)}needle ${'more '.repeat(60)}`)
+    const data = await load()
+    render(
+      <DialogProvider>
+        <Library
+          data={data}
+          view={{ kind: 'root' }}
+          query="needle"
+          mode="list"
+          onMode={() => {}}
+          isDesktop
+          onNavigate={() => {}}
+          onClearQuery={() => {}}
+          onOpenNote={() => {}}
+        />
+      </DialogProvider>,
+    )
+    const preview = document.querySelector('[data-card="list"] span.truncate.text-sm') as HTMLElement
+    const text = preview.textContent ?? ''
+    expect(text).toContain('needle')
+    expect(text.indexOf('needle')).toBeLessThanOrEqual(30) // near the start, not buried in the middle
+    expect(text.length).toBeLessThanOrEqual(60)
+  })
+})
+
+describe('folder colours', () => {
+  it('shows a folder with its chosen colour, and offers a picker on its page', async () => {
+    const ids = await seed()
+    await repo.setFolderColor(ids.folder, 'blue')
+    const user = userEvent.setup()
+    const data = await load()
+    render(<Harness data={data} view={{ kind: 'folder', id: ids.folder }} />)
+
+    await user.click(screen.getByRole('button', { name: /Color/ }))
+    const dialog = await openDialog()
+    expect(within(dialog).getByRole('button', { name: 'Blue', hidden: true }).getAttribute('aria-pressed')).toBe('true')
+    await user.click(within(dialog).getByRole('button', { name: 'Green', hidden: true }))
+    await waitFor(async () => expect((await db.folders.get(ids.folder))?.color).toBe('green'))
+  })
+
+  it('can clear a folder’s colour', async () => {
+    const ids = await seed()
+    await repo.setFolderColor(ids.folder, 'red')
+    const user = userEvent.setup()
+    render(<Harness data={await load()} view={{ kind: 'folder', id: ids.folder }} />)
+    await user.click(screen.getByRole('button', { name: /Color/ }))
+    await user.click(within(await openDialog()).getByRole('button', { name: 'No colour', hidden: true }))
+    await waitFor(async () => expect((await db.folders.get(ids.folder))?.color).toBeNull())
+  })
+
+  it('draws the folder icon in that colour on the home list', async () => {
+    const ids = await seed()
+    await repo.setFolderColor(ids.folder, 'violet')
+    render(<Harness data={await load()} />)
+    const card = screen.getByRole('button', { name: /Work/ })
+    const icon = card.querySelector('svg') as SVGElement
+    expect(icon.style.color).toBe('var(--folder-violet)')
+  })
+
+  it('refuses a colour that does not exist', async () => {
+    const ids = await seed()
+    await expect(repo.setFolderColor(ids.folder, 'not-a-colour')).rejects.toThrow('Unknown folder colour')
+    expect((await db.folders.get(ids.folder))?.color).toBeNull()
+  })
+})
+
 describe('card sizes', () => {
   const cards = () => [...document.querySelectorAll<HTMLElement>('[data-card]')]
 

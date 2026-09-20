@@ -12,6 +12,15 @@ export class FakeServer {
   readonly store = new MemoryStore()
   readonly images = new Map<string, { mime: string; data: Buffer }>()
   pin = '123456'
+  /** The current recovery code, or null if none was created. Starts set, so tests are not nagged. */
+  recoveryCode: string | null = 'ABCD-EFGH-JKMN-PQRS'
+  private issued = 0
+  private issueRecoveryCode() {
+    this.issued++
+    const tail = String(this.issued).padStart(4, '2').replace(/[01]/g, '2')
+    this.recoveryCode = `ZZZZ-YYYY-XXXX-${tail}`
+    return this.recoveryCode
+  }
   /** Every request seen, for tests that care what was (not) sent. */
   readonly log: string[] = []
   /** Set to make the next sync request fail, to test recovery. */
@@ -58,7 +67,24 @@ export class FakeServer {
     }
     if (path === '/api/auth/me') {
       if (!this.isSignedIn(route)) return this.json(route, 401, { error: 'unauthorized' })
-      return this.json(route, 200, { defaultPin: this.pin === '123456' })
+      return this.json(route, 200, { defaultPin: this.pin === '123456', hasRecovery: this.recoveryCode !== null })
+    }
+    if (path === '/api/auth/recovery' && request.method() === 'POST') {
+      if (!this.isSignedIn(route)) return this.json(route, 401, { error: 'unauthorized' })
+      const { pin } = request.postDataJSON() as { pin?: string }
+      if (pin !== this.pin) return this.json(route, 401, { error: 'invalid' })
+      return this.json(route, 200, { code: this.issueRecoveryCode() })
+    }
+    if (path === '/api/auth/reset' && request.method() === 'POST') {
+      const { recoveryCode, newPin } = request.postDataJSON() as { recoveryCode?: string; newPin?: string }
+      const given = (recoveryCode ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+      if (this.recoveryCode === null || given !== this.recoveryCode.replace(/-/g, '')) {
+        return this.json(route, 401, { error: 'invalid' })
+      }
+      if (!newPin || newPin === '123456') return this.json(route, 400, { error: 'same_as_default' })
+      this.pin = newPin
+      this.signedIn.add(this.contextOf(route))
+      return this.json(route, 200, { code: this.issueRecoveryCode() })
     }
 
     if (!this.isSignedIn(route)) return this.json(route, 401, { error: 'unauthorized' })

@@ -8,7 +8,8 @@ import { liveFolders, parseKey, sectionsFor, type LibraryData, type View } from 
 import { noteToMarkdown } from '../lib/markdown'
 import { repo } from '../sync/runtime'
 import ItemCard from './ItemCard'
-import { MoveDialog, TagsDialog } from './PickerDialogs'
+import { folderColorVar } from '../lib/folderColors'
+import { FolderColorDialog, MoveDialog, TagsDialog } from './PickerDialogs'
 import { useDialogs } from './ui/Dialogs'
 import { BackIcon, CloseIcon, GridIcon, ListIcon, MoreIcon, PinIcon, PlusIcon, SplitIcon, TrashIcon } from './ui/Icons'
 import { Modal } from './ui/Modal'
@@ -121,6 +122,7 @@ export default function Library({
   const [moveOpen, setMoveOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [colorOpen, setColorOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
@@ -549,6 +551,12 @@ export default function Library({
               {view.kind === 'folder' && !searching && (
                 <>
                   <ToolButton onClick={() => void renameFolder()}>Rename</ToolButton>
+                  <ToolButton onClick={() => setColorOpen(true)} hint="Choose a colour for this folder">
+                    {folderColorVar(folder?.color) && (
+                      <span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: folderColorVar(folder?.color) }} />
+                    )}
+                    Color
+                  </ToolButton>
                   <ToolButton
                     onClick={() => folder && void repo.setPinned([{ entity: 'folder', id: folder.id }], !folder.pinned)}
                   >
@@ -733,6 +741,16 @@ export default function Library({
           ))}
         </div>
       </Modal>
+
+      <FolderColorDialog
+        open={colorOpen}
+        folder={folder}
+        onPick={(color) => {
+          if (folder) void repo.setFolderColor(folder.id, color)
+          setColorOpen(false)
+        }}
+        onClose={() => setColorOpen(false)}
+      />
 
       <MoveDialog
         open={moveOpen}

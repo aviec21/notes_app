@@ -14,6 +14,16 @@
      Both pairs meet 4.5:1 (checked against the page and card backgrounds). */
   --danger: #c62828;
   --on-danger: #ffffff;
+  /* Folder colours (deeper shades on the light background). */
+  --folder-red: #d9362b;
+  --folder-orange: #d9600b;
+  --folder-amber: #b7791f;
+  --folder-green: #2b8a3e;
+  --folder-teal: #0b7285;
+  --folder-blue: #1c6fc4;
+  --folder-violet: #6741d9;
+  --folder-pink: #c2255c;
+  --folder-gray: #6b7280;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,6 +37,16 @@
     --accent: #8b85ff;
     --danger: #ff7b7b;
     --on-danger: #121216;
+    /* Lighter shades on the dark background. */
+    --folder-red: #ff8787;
+    --folder-orange: #ffa94d;
+    --folder-amber: #ffd43b;
+    --folder-green: #69db7c;
+    --folder-teal: #3bc9db;
+    --folder-blue: #74c0fc;
+    --folder-violet: #b197fc;
+    --folder-pink: #f783ac;
+    --folder-gray: #adb5bd;
   }
 }
 
@@ -40,6 +60,25 @@
   --accent: #8b85ff;
   --danger: #ff7b7b;
   --on-danger: #121216;
+  --folder-red: #ff8787;
+  --folder-orange: #ffa94d;
+  --folder-amber: #ffd43b;
+  --folder-green: #69db7c;
+  --folder-teal: #3bc9db;
+  --folder-blue: #74c0fc;
+  --folder-violet: #b197fc;
+  --folder-pink: #f783ac;
+  --folder-gray: #adb5bd;
+}
+
+/* A matched word in search results. Text stays in the normal text colour on a soft tint,
+   so contrast holds up in both themes. */
+mark.search-hit {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 600;
 }
 
 /* Rich-text note body. The reset strips list and heading styles, so they are restored here.

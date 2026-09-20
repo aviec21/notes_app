@@ -92,8 +92,15 @@ export const HELP_TOPICS: HelpTopic[] = [
     id: 'search',
     section: 'Organising',
     title: 'Search',
-    body: 'Type in the search box (press / or Ctrl+K on desktop). It looks through every note’s title and text, tag names and folder names, in every folder. Capital letters don’t matter and part of a word is enough: “mee” finds “Meeting”. Search works offline. Items in the recycle bin are not searched.',
-    keywords: 'find look filter keyword',
+    body: 'Type in the search box (press / or Ctrl+K on desktop). It looks through every note’s title and text, tag names and folder names, in every folder. Capital letters don’t matter and part of a word is enough: “mee” finds “Meeting”. Search works offline. Items in the recycle bin are not searched. The words that matched are highlighted in the results, and the text preview jumps to where they appear in the note.',
+    keywords: 'find look filter keyword highlight match',
+  },
+  {
+    id: 'folder-color',
+    section: 'Organising',
+    title: 'Folder colours',
+    body: 'Open a folder and choose “Color” in the toolbar, then pick a colour (or “No colour”). The folder’s icon takes that colour in the list, the grid and the sidebar, on all your devices, and adjusts itself for the dark theme.',
+    keywords: 'colour color paint label icon folder',
   },
 
   // --- Recycle bin --------------------------------------------------------------------
@@ -289,8 +296,15 @@ export const HELP_TOPICS: HelpTopic[] = [
     id: 'pin-forgot',
     section: 'Settings',
     title: 'Forgot your PIN',
-    body: 'In the Neon SQL editor run: DELETE FROM auth_pin;  The PIN then resets to 123456; change it straight away.',
-    keywords: 'reset recover locked out',
+    body: 'On the sign-in screen choose “Forgot your PIN?”, type your recovery code, then choose a new PIN. You are signed in and given a fresh recovery code, because each code works once. Your other devices are signed out. If you never made a recovery code, or lost it, the last resort is the database: in the Neon SQL editor run DELETE FROM auth_pin; and the PIN goes back to 123456 (change it straight away, and make a recovery code).',
+    keywords: 'reset recover locked out password backup forgot',
+  },
+  {
+    id: 'recovery-code',
+    section: 'Settings',
+    title: 'Recovery code (backup password)',
+    body: 'A recovery code is a backup for your PIN. Open Settings, choose “Create a recovery code” and enter your current PIN. You get a code like K7QM-2XPD-9HRT-4WNB, shown once, so save it in a password manager, print it, or use “Download as text file”. Anyone who has the code can reset your PIN, so keep it private. Creating a new code makes the old one stop working. Wrong guesses count towards the same lock-out as the PIN.',
+    keywords: 'backup password reset secret key emergency forgot',
   },
   {
     id: 'sidebar',

@@ -28,6 +28,7 @@ function Screens() {
     <DialogProvider>
       <NotesApp
         defaultPin={state.defaultPin}
+        hasRecovery={state.hasRecovery}
         onSignOut={signOut}
         onPinChanged={refresh}
         onUnauthorized={refresh}

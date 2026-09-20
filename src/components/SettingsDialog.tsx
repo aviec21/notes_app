@@ -4,6 +4,7 @@ import { storageInfo, type StorageInfo } from '../storage'
 import { downloadBlob, exportAllNotes } from '../lib/export'
 import { useTheme, type Theme } from '../theme'
 import ChangePin from './ChangePin'
+import RecoverySection from './RecoveryCode'
 import { useDialogs } from './ui/Dialogs'
 import { Modal, buttonStyles } from './ui/Modal'
 
@@ -95,12 +96,14 @@ export default function SettingsDialog({
   open,
   onClose,
   defaultPin,
+  hasRecovery = true,
   onSignOut,
   onPinChanged,
 }: {
   open: boolean
   onClose: () => void
   defaultPin: boolean
+  hasRecovery?: boolean
   onSignOut: () => void
   onPinChanged: () => void
 }) {
@@ -155,6 +158,8 @@ export default function SettingsDialog({
         <StorageSection />
 
         <ChangePin onChanged={onPinChanged} />
+
+        <RecoverySection hasRecovery={hasRecovery} onChanged={onPinChanged} />
 
         <div className="flex justify-between gap-3">
           <button type="button" onClick={() => void signOut()} className={buttonStyles.base} style={buttonStyles.plain}>

@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     if (Date.now() / 1000 - session.issuedAt > RENEW_AFTER_SECONDS) {
       headers.append('Set-Cookie', sessionCookie(await createSessionToken(session.version), request))
     }
-    return json({ defaultPin: session.defaultPin }, 200, headers)
+    return json({ defaultPin: session.defaultPin, hasRecovery: session.hasRecovery }, 200, headers)
   } catch (err) {
     console.error('Session check failed:', err instanceof Error ? err.message : err)
     return json({ error: 'server' }, 500)

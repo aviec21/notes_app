@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import type { FolderRecord, NoteRecord, TagRecord } from '../../shared/sync'
+import { FOLDER_COLORS, folderColorVar } from '../lib/folderColors'
 import { buttonStyles, Modal } from './ui/Modal'
 import { FolderIcon } from './ui/Icons'
 
@@ -30,12 +31,66 @@ export function MoveDialog({
         </button>
         {folders.map((folder) => (
           <button key={folder.id} type="button" onClick={() => onPick(folder.id)} className={row} style={rowStyle}>
-            <FolderIcon /> <span className="truncate">{folder.name}</span>
+            <FolderIcon color={folderColorVar(folder.color)} /> <span className="truncate">{folder.name}</span>
           </button>
         ))}
         <button type="button" onClick={onNewFolder} className={`${row} font-medium`} style={{ ...rowStyle, borderStyle: 'dashed' }}>
           + New folder…
         </button>
+      </div>
+    </Modal>
+  )
+}
+
+/** Choose a folder's colour (or none). Picking one applies it straight away. */
+export function FolderColorDialog({
+  open,
+  folder,
+  onPick,
+  onClose,
+}: {
+  open: boolean
+  folder: FolderRecord | undefined
+  onPick: (color: string | null) => void
+  onClose: () => void
+}) {
+  const swatch = (color: string | null, label: string) => {
+    const selected = (folder?.color ?? null) === color
+    return (
+      <button
+        key={label}
+        type="button"
+        onClick={() => onPick(color)}
+        aria-label={label}
+        aria-pressed={selected}
+        title={label}
+        className="flex h-11 w-11 items-center justify-center rounded-full"
+        style={{
+          border: '1px solid var(--border)',
+          background: color ? `var(--folder-${color})` : 'transparent',
+          boxShadow: selected ? '0 0 0 2px var(--bg), 0 0 0 4px var(--accent)' : undefined,
+        }}
+      >
+        {color === null ? (
+          <span aria-hidden="true" style={{ color: 'var(--muted)' }}>
+            ∅
+          </span>
+        ) : null}
+      </button>
+    )
+  }
+  return (
+    <Modal open={open && !!folder} onClose={onClose} title={`Colour for “${folder?.name ?? ''}”`}>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap gap-3" role="group" aria-label="Folder colour">
+          {swatch(null, 'No colour')}
+          {FOLDER_COLORS.map((c) => swatch(c.id, c.label))}
+        </div>
+        <div className="flex justify-end">
+          <button type="button" onClick={onClose} className={buttonStyles.base} style={buttonStyles.plain}>
+            Close
+          </button>
+        </div>
       </div>
     </Modal>
   )

@@ -1,6 +1,8 @@
 ﻿import { useEffect, useRef, type MouseEvent, type PointerEvent } from 'react'
 import type { TagRecord } from '../../shared/sync'
+import { folderColorVar } from '../lib/folderColors'
 import { snippetAround, type Item } from '../lib/library'
+import Highlight from './Highlight'
 import { FolderIcon, PinIcon } from './ui/Icons'
 
 function formatWhen(ms: number): string {
@@ -70,7 +72,8 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
 
   const detail = isNote
     ? query.trim()
-      ? snippetAround(item.note.contentText, query)
+      ? // Cut close to the match so it stays in view on a narrow one-line row.
+        snippetAround(item.note.contentText, query, mode === 'grid' ? 30 : 20)
       : item.note.contentText.trim().slice(0, 160) || 'No text'
     : plural(item.noteCount, 'note')
   const when = isNote ? item.note.updatedAt : item.folder.updatedAt
@@ -98,7 +101,7 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
           className="max-w-24 truncate rounded-full px-2 text-xs leading-5"
           style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}
         >
-          #{tag.name}
+          #<Highlight text={tag.name} query={query.replace(/^#/, '')} />
         </span>
       ))}
       {chips.length > shownChips.length && (
@@ -140,8 +143,10 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
         className={`flex h-full w-full flex-col rounded-xl py-3 pr-3 text-left select-none [-webkit-touch-callout:none] ${grid ? 'justify-start' : 'justify-center'} ${showCheckbox ? 'pl-10' : 'pl-3'}`}
       >
         <span className="flex w-full items-center gap-2">
-          {!isNote && <FolderIcon />}
-          <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+          {!isNote && <FolderIcon color={folderColorVar(item.folder.color)} />}
+          <span className="min-w-0 flex-1 truncate font-medium">
+            <Highlight text={title} query={query} />
+          </span>
           {pinned && (
             <span aria-label="Pinned" style={{ color: 'var(--accent)' }}>
               <PinIcon />
@@ -158,7 +163,7 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
           <>
             {/* At most two lines of preview. */}
             <span className="mt-1 line-clamp-2 min-h-10 w-full text-sm leading-5 break-words" style={{ color: 'var(--muted)' }}>
-              {detail}
+              <Highlight text={detail} query={isNote ? query : ''} />
             </span>
             <span className="mt-auto flex w-full items-center justify-between gap-2">
               {chipList}
@@ -171,7 +176,7 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
           <span className="mt-0.5 flex w-full items-center gap-2">
             {/* One line of preview, with any tags to its right. */}
             <span className="min-w-0 flex-1 truncate text-sm" style={{ color: 'var(--muted)' }}>
-              {detail}
+              <Highlight text={detail} query={isNote ? query : ''} />
             </span>
             {chipList}
           </span>

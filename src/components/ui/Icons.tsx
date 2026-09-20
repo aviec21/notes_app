@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-function Icon({ children, size = 18 }: { children: ReactNode; size?: number }) {
+function Icon({ children, size = 18, color, tint }: { children: ReactNode; size?: number; color?: string; tint?: boolean }) {
   return (
     <svg
       width={size}
@@ -13,14 +13,16 @@ function Icon({ children, size = 18 }: { children: ReactNode; size?: number }) {
       strokeLinejoin="round"
       aria-hidden="true"
       className="shrink-0"
+      style={{ color, fill: color && tint ? 'color-mix(in srgb, currentColor 22%, transparent)' : undefined }}
     >
       {children}
     </svg>
   )
 }
 
-export const FolderIcon = () => (
-  <Icon>
+/** `color` is a CSS colour (usually from folderColorVar); without one the icon takes the text colour. */
+export const FolderIcon = ({ color }: { color?: string }) => (
+  <Icon color={color} tint>
     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
   </Icon>
 )

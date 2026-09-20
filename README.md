@@ -29,8 +29,14 @@ The PIN is stored as a salted hash in Neon (table `auth_pin`). It starts as `123
 change it in the app (Change PIN). After 5 wrong attempts sign-in locks for a minute,
 doubling with each further failure. Changing the PIN signs out every other device.
 
-**Forgot the PIN?** In the Neon SQL editor run `DELETE FROM auth_pin;` — the next request
-recreates it with the default `123456`.
+**Recovery code (the backup password).** In Settings, "Create a recovery code" (asks for the
+current PIN) shows a 16-character code once, e.g. `K7QM-2XPD-9HRT-4WNB` (~79 bits, no look-alike
+characters). Only a salted scrypt hash is stored. On the sign-in screen, "Forgot your PIN?" takes
+the code plus a new PIN, signs you in, signs out other devices, and issues a fresh code (each
+code works once). Wrong guesses share the PIN lock-out. Migration 4 adds the columns.
+
+**Lost both?** In the Neon SQL editor run `DELETE FROM auth_pin;` — the next request
+recreates it with the default `123456` (and no recovery code; make a new one).
 
 ## Develop
 

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 export type AuthState =
   | { status: 'loading' }
   | { status: 'signedOut' }
-  | { status: 'signedIn'; defaultPin: boolean }
+  | { status: 'signedIn'; defaultPin: boolean; hasRecovery: boolean }
 
 const CACHE_KEY = 'notes.signedIn'
 
@@ -35,9 +35,9 @@ export function useAuth() {
     try {
       const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
       if (res.ok) {
-        const { defaultPin } = (await res.json()) as { defaultPin: boolean }
+        const { defaultPin, hasRecovery } = (await res.json()) as { defaultPin: boolean; hasRecovery?: boolean }
         rememberSignedIn(true)
-        setState({ status: 'signedIn', defaultPin })
+        setState({ status: 'signedIn', defaultPin, hasRecovery: hasRecovery ?? true })
       } else if (res.status === 401) {
         rememberSignedIn(false)
         setState({ status: 'signedOut' })
@@ -46,7 +46,8 @@ export function useAuth() {
       }
     } catch {
       // Offline or server trouble: trust the last verified state rather than lock you out.
-      setState(wasSignedIn() ? { status: 'signedIn', defaultPin: false } : { status: 'signedOut' })
+      // (Offline we cannot know whether a recovery code exists, so we do not nag about it.)
+      setState(wasSignedIn() ? { status: 'signedIn', defaultPin: false, hasRecovery: true } : { status: 'signedOut' })
     }
   }, [])
 

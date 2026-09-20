@@ -9,6 +9,7 @@ import {
   type TagRecord,
 } from '../../shared/sync'
 import { docToText, textToDoc } from '../lib/doc'
+import { isFolderColor } from '../lib/folderColors'
 import type { LocalRecord, NotesDB } from './db'
 
 const sameValue = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b)
@@ -217,6 +218,12 @@ export class Repo {
 
   renameFolder(id: string, name: string) {
     return this.update('folder', id, { name: name.trim() })
+  }
+
+  /** Sets a folder's colour by name (see lib/folderColors), or clears it with null. */
+  async setFolderColor(id: string, color: string | null) {
+    if (color !== null && !isFolderColor(color)) throw new Error(`Unknown folder colour: ${color}`)
+    return this.update('folder', id, { color })
   }
 
   // --- pin ---------------------------------------------------------------------------

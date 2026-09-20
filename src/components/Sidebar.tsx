@@ -8,6 +8,7 @@ import {
   type LibraryData,
   type View,
 } from '../lib/library'
+import { folderColorVar } from '../lib/folderColors'
 import { repo } from '../sync/runtime'
 import SearchBox from './SearchBox'
 import SyncStatus from './SyncStatus'
@@ -155,7 +156,7 @@ export default function Sidebar({ data, view, query, searchRef, onNavigate, onQu
             key={folder.id}
             active={isView('folder', folder.id)}
             onClick={() => onNavigate({ kind: 'folder', id: folder.id })}
-            icon={<FolderIcon />}
+            icon={<FolderIcon color={folderColorVar(folder.color)} />}
             label={folder.name}
             count={folderCounts.get(folder.id) ?? 0}
             pinned={folder.pinned}

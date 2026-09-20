@@ -98,6 +98,14 @@ const MIGRATIONS: Migration[] = [
        )`,
     ],
   },
+  {
+    id: 4,
+    statements: [
+      // A backup way in if the PIN is forgotten: only a salted hash of the code is kept.
+      `ALTER TABLE auth_pin ADD COLUMN IF NOT EXISTS recovery_hash text`,
+      `ALTER TABLE auth_pin ADD COLUMN IF NOT EXISTS recovery_set_at timestamptz`,
+    ],
+  },
 ]
 
 export async function runMigrations(query: Query): Promise<void> {

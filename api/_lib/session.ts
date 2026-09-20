@@ -8,6 +8,8 @@ export interface Session {
   version: number
   issuedAt: number // seconds since epoch
   defaultPin: boolean
+  /** Whether a recovery code has been created (so the PIN can be reset if forgotten). */
+  hasRecovery: boolean
 }
 
 function secretKey(): Uint8Array {
@@ -59,9 +61,11 @@ export async function readSession(request: Request): Promise<Session | null> {
   }
 
   const sql = await db()
-  const [row] = await sql`SELECT session_version, is_default FROM auth_pin WHERE id = 1`
+  const [row] = await sql`
+    SELECT session_version, is_default, recovery_hash IS NOT NULL AS has_recovery
+    FROM auth_pin WHERE id = 1`
   if (!row || row.session_version !== version) return null
-  return { version, issuedAt, defaultPin: row.is_default }
+  return { version, issuedAt, defaultPin: row.is_default, hasRecovery: row.has_recovery }
 }
 
 export function sessionCookie(token: string, request: Request): string {

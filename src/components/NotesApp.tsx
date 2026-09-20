@@ -23,12 +23,14 @@ import Sidebar from './Sidebar'
 
 interface Props {
   defaultPin: boolean
+  /** Whether a recovery code exists (defaults to true so nothing nags when unknown). */
+  hasRecovery?: boolean
   onSignOut: () => void
   onPinChanged: () => void
   onUnauthorized: () => void
 }
 
-export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauthorized }: Props) {
+export default function NotesApp({ defaultPin, hasRecovery = true, onSignOut, onPinChanged, onUnauthorized }: Props) {
   const data = useLibraryData()
   const isDesktop = useIsDesktop()
   const [view, setView] = useState<View>({ kind: 'root' })
@@ -84,6 +86,15 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
       </span>
       <button type="button" onClick={() => setSettingsOpen(true)} className="rounded-lg px-3 py-1.5 font-medium" style={{ background: 'var(--accent)', color: 'var(--bg)' }}>
         Change PIN
+      </button>
+    </div>
+  ) : !hasRecovery ? (
+    <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl p-3 text-sm" style={{ border: '1px solid var(--accent)' }}>
+      <span>
+        <strong>You have no recovery code yet.</strong> If you forget your PIN you would not be able to get back in. It takes a minute to create one.
+      </span>
+      <button type="button" onClick={() => setSettingsOpen(true)} className="rounded-lg px-3 py-1.5 font-medium" style={{ background: 'var(--accent)', color: 'var(--bg)' }}>
+        Create recovery code
       </button>
     </div>
   ) : undefined
@@ -179,6 +190,7 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         defaultPin={defaultPin}
+        hasRecovery={hasRecovery}
         onSignOut={onSignOut}
         onPinChanged={onPinChanged}
       />
