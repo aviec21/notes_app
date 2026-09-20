@@ -406,6 +406,148 @@ describe('card sizes', () => {
   })
 })
 
+describe('selection bar: phone "More" menu', () => {
+  const barButtons = () =>
+    [...document.querySelectorAll<HTMLButtonElement>('[data-toolbar] button')].map((b) => b.getAttribute('aria-label') ?? b.textContent?.trim())
+
+  async function selectOnPhone(user: ReturnType<typeof userEvent.setup>, ...titles: string[]) {
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+    for (const title of titles) await user.click(screen.getByRole('checkbox', { name: `Select ${title}` }))
+  }
+
+  const openMore = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    return openDialog()
+  }
+
+  const menuNames = (dialog: HTMLElement) =>
+    within(dialog)
+      .getAllByRole('menuitem', { hidden: true })
+      .map((item) => item.firstChild?.textContent)
+
+  it('shows only Move, Delete and More on the bar, with the rest tucked into the menu', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} />)
+    await selectOnPhone(user, 'Groceries')
+
+    expect(barButtons()).toEqual(['Clear selection', 'Move', 'Delete', 'More actions'].map((n) => (n === 'More actions' ? 'More actions' : n)))
+    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull() // not on the bar itself
+  })
+
+  it('keeps the bar identical whether one or several items are chosen', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} />)
+    await selectOnPhone(user, 'Groceries')
+    const one = barButtons()
+    await user.click(screen.getByRole('checkbox', { name: 'Select Ideas' }))
+    expect(barButtons()).toEqual(one)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Work' }))
+    expect(barButtons()).toEqual(one)
+  })
+
+  it('lists the other actions in the menu, in the same order every time', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} />)
+    await selectOnPhone(user, 'Groceries')
+
+    const dialog = await openMore(user)
+    const expected = ['Export as Markdown', 'Copy as Markdown', 'Rename', 'Tag', 'Pin', 'Select all']
+    expect(menuNames(dialog)).toEqual(expected)
+    await user.keyboard('{Escape}')
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Ideas' }))
+    expect(menuNames(await openMore(user))).toEqual(expected) // still the same list with two chosen
+  })
+
+  it('greys out Rename in the menu unless exactly one item is chosen', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} />)
+    await selectOnPhone(user, 'Groceries', 'Ideas')
+    const dialog = await openMore(user)
+    const rename = within(dialog).getByRole('menuitem', { name: /Rename/, hidden: true }) as HTMLButtonElement
+    expect(rename.disabled).toBe(true)
+    expect(rename.textContent).toContain('exactly one')
+  })
+
+  it('renames the chosen note from the menu', async () => {
+    const ids = await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} />)
+    await selectOnPhone(user, 'Groceries')
+    const menu = await openMore(user)
+    await user.click(within(menu).getByRole('menuitem', { name: /Rename/, hidden: true }))
+
+    const prompt = await waitFor(() => {
+      const el = [...document.querySelectorAll<HTMLElement>('dialog[open]')].find((d) => d.textContent?.includes('Rename note'))
+      if (!el) throw new Error('no rename dialog')
+      return el
+    })
+    const input = within(prompt).getByRole('textbox', { hidden: true })
+    await user.clear(input)
+    await user.type(input, 'Shopping{Enter}')
+    await waitFor(async () => expect((await db.notes.get(ids.loose))?.title).toBe('Shopping'))
+  })
+
+  it('exports, pins and selects all from the menu', async () => {
+    const ids = await seed()
+    vi.mocked(downloadBlob).mockClear()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} />)
+    await selectOnPhone(user, 'Groceries')
+
+    await user.click(within(await openMore(user)).getByRole('menuitem', { name: /Export/, hidden: true }))
+    await waitFor(() => expect(downloadBlob).toHaveBeenCalledTimes(1))
+
+    await user.click(within(await openMore(user)).getByRole('menuitem', { name: /^Pin/, hidden: true }))
+    await waitFor(async () => expect((await db.notes.get(ids.loose))?.pinned).toBe(true))
+
+    await user.click(within(await openMore(user)).getByRole('menuitem', { name: 'Select all', hidden: true }))
+    expect(await screen.findByText('3 selected')).toBeTruthy()
+  })
+
+  it('still asks before deleting, with the icon-only Delete button', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} />)
+    await selectOnPhone(user, 'Groceries')
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(within(await openDialog()).getByText('Move to recycle bin?')).toBeTruthy()
+  })
+
+  it('in the recycle bin: Restore, Delete forever and More', async () => {
+    const ids = await seed()
+    await repo.trashNotes([ids.loose])
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} view={{ kind: 'bin' }} />)
+    await selectOnPhone(user, 'Groceries')
+    expect(barButtons()).toEqual(['Clear selection', 'Restore', 'Delete forever', 'More actions'])
+
+    const menu = await openMore(user)
+    // Nothing to rename or tag in the bin. The one note there is selected, so it offers to deselect.
+    expect(menuNames(menu)).toEqual(['Export as Markdown', 'Copy as Markdown', 'Deselect all'])
+  })
+})
+
+describe('selection bar on a computer', () => {
+  it('shows every action on the bar itself, with Rename greyed out for several items', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop />)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Ideas' }))
+
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull() // no menu needed here
+    for (const name of ['Rename', 'Move', 'Tag', 'Pin', 'Delete', 'Copy']) {
+      expect(screen.getByRole('button', { name })).toBeTruthy()
+    }
+    expect((screen.getByRole('button', { name: 'Rename' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
 describe('Library on a phone', () => {
   it('hides checkboxes until Select is tapped', async () => {
     await seed()

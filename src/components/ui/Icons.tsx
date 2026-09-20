@@ -81,6 +81,13 @@ export const CloseIcon = () => (
     <path d="M18 6 6 18M6 6l12 12" />
   </Icon>
 )
+export const MoreIcon = () => (
+  <Icon>
+    <circle cx="5" cy="12" r="1.2" />
+    <circle cx="12" cy="12" r="1.2" />
+    <circle cx="19" cy="12" r="1.2" />
+  </Icon>
+)
 export const CopyIcon = () => (
   <Icon>
     <rect x="9" y="9" width="12" height="12" rx="2" />

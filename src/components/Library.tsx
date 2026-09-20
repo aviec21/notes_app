@@ -10,7 +10,8 @@ import { repo } from '../sync/runtime'
 import ItemCard from './ItemCard'
 import { MoveDialog, TagsDialog } from './PickerDialogs'
 import { useDialogs } from './ui/Dialogs'
-import { BackIcon, CloseIcon, GridIcon, ListIcon, PinIcon, PlusIcon, SplitIcon, TrashIcon } from './ui/Icons'
+import { BackIcon, CloseIcon, GridIcon, ListIcon, MoreIcon, PinIcon, PlusIcon, SplitIcon, TrashIcon } from './ui/Icons'
+import { Modal } from './ui/Modal'
 
 export type ViewMode = 'list' | 'grid'
 
@@ -88,6 +89,7 @@ export default function Library({
   const [selectMode, setSelectMode] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
@@ -395,7 +397,36 @@ export default function Library({
         className="sticky top-0 z-10 -mx-4 flex h-14 flex-nowrap items-center gap-2 overflow-hidden px-4 md:-mx-6 md:px-6"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
-        {selecting ? (
+        {selecting && !isDesktop ? (
+          /* Phone: the two everyday actions, plus "More" for the rest. The buttons are the same
+             for any selection (unavailable ones grey out inside the menu), so nothing moves. */
+          <>
+            <ToolButton onClick={clearSelection} label="Clear selection">
+              <CloseIcon />
+            </ToolButton>
+            <span className="min-w-0 flex-1 truncate text-sm">{selectedKeys.length} selected</span>
+            {inBin ? (
+              <>
+                <ToolButton onClick={() => void restoreSelected()}>Restore</ToolButton>
+                <ToolButton onClick={() => void deleteSelectedForever()} danger label="Delete forever">
+                  <TrashIcon />
+                </ToolButton>
+              </>
+            ) : (
+              <>
+                <ToolButton onClick={() => setMoveOpen(true)} disabled={selectedNoteIds.length === 0}>
+                  Move
+                </ToolButton>
+                <ToolButton onClick={() => void trashSelected()} danger label="Delete">
+                  <TrashIcon />
+                </ToolButton>
+              </>
+            )}
+            <ToolButton onClick={() => setMoreOpen(true)} label="More actions">
+              <MoreIcon /> More
+            </ToolButton>
+          </>
+        ) : selecting ? (
           <>
             <label className="flex shrink-0 items-center gap-2 text-sm whitespace-nowrap">
               <input
@@ -603,6 +634,60 @@ export default function Library({
           <PlusIcon />
         </button>
       )}
+
+      <Modal open={moreOpen && selecting} onClose={() => setMoreOpen(false)} title={`${selectedKeys.length} selected`}>
+        <div className="flex flex-col gap-1.5" role="menu" aria-label="More actions">
+          {(
+            [
+              { label: 'Export as Markdown', hint: 'One .md file', run: exportSelected, ok: true },
+              {
+                label: 'Copy as Markdown',
+                hint: selectedNoteIds.length ? 'Copies the selected notes' : 'Select at least one note',
+                run: copySelected,
+                ok: selectedNoteIds.length > 0,
+              },
+              ...(inBin
+                ? []
+                : [
+                    {
+                      label: 'Rename',
+                      hint: selectedKeys.length === 1 ? undefined : 'Select exactly one note or folder',
+                      run: renameSelected,
+                      ok: selectedKeys.length === 1,
+                    },
+                    {
+                      label: 'Tag',
+                      hint: selectedNoteIds.length ? undefined : 'Select at least one note',
+                      run: async () => setTagsOpen(true),
+                      ok: selectedNoteIds.length > 0,
+                    },
+                    { label: everythingPinned ? 'Unpin' : 'Pin', hint: undefined, run: togglePinSelected, ok: true },
+                  ]),
+              { label: allSelected ? 'Deselect all' : 'Select all', hint: undefined, run: async () => selectAll(), ok: true },
+            ] as { label: string; hint?: string; run: () => Promise<void>; ok: boolean }[]
+          ).map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              role="menuitem"
+              disabled={!action.ok}
+              onClick={() => {
+                setMoreOpen(false)
+                void action.run()
+              }}
+              className="flex flex-col rounded-lg px-3 py-3 text-left text-sm disabled:opacity-40"
+              style={{ border: '1px solid var(--border)' }}
+            >
+              {action.label}
+              {action.hint && (
+                <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                  {action.hint}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </Modal>
 
       <MoveDialog
         open={moveOpen}
