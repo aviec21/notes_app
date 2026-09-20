@@ -181,11 +181,12 @@ export class PgStore implements Store {
   }
 
   async purgeOrphanImages() {
-    // The grace period keeps a picture that was uploaded just before its note arrives.
+    // Generous grace period: a device that was offline may upload a picture and only send
+    // the note that uses it days later. Orphans are small, so waiting costs almost nothing.
     const rows = await this.query(
       `WITH gone AS (
          DELETE FROM images i
-         WHERE i.created_at < now() - interval '1 day'
+         WHERE i.created_at < now() - interval '14 days'
            AND NOT EXISTS (SELECT 1 FROM notes n WHERE n.content::text LIKE '%' || i.id::text || '%')
          RETURNING 1
        )

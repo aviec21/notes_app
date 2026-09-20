@@ -244,9 +244,9 @@ describe('stored pictures (real Postgres)', () => {
   it('deletes only old pictures that no note uses any more', async () => {
     const { store, query } = await postgres()
     const [used, orphan, fresh] = [uuid(), uuid(), uuid()]
-    await addImage(query, used, 5)
-    await addImage(query, orphan, 5)
-    await addImage(query, fresh, 0) // uploaded just now; its note may still be on its way
+    await addImage(query, used, 20)
+    await addImage(query, orphan, 20)
+    await addImage(query, fresh, 5) // recent enough that its note may still be on its way
 
     const noteId = uuid()
     applied(
