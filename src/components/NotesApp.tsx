@@ -33,7 +33,9 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
   const [view, setView] = useState<View>({ kind: 'root' })
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
-  const [mode, setMode] = usePersistentChoice<ViewMode>('notes.viewMode', 'list', ['list', 'grid'])
+  // List is the default on every device. The choice is remembered per device; the key is
+  // versioned so an earlier, forgotten choice of grid does not override the new default.
+  const [mode, setMode] = usePersistentChoice<ViewMode>('notes.viewMode.v2', 'list', ['list', 'grid'])
   const [editorModeChoice, setEditorModeChoice] = usePersistentChoice<'on' | 'off'>('notes.editorMode', 'on', ['on', 'off'])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)

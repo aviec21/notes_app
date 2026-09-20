@@ -41,12 +41,16 @@ function ToolButton({
   danger,
   children,
   label,
+  hint,
 }: {
   onClick: () => void
   disabled?: boolean
   danger?: boolean
   children: ReactNode
+  /** Accessible name, for buttons that show only an icon. */
   label?: string
+  /** Tooltip, e.g. to explain why a button is greyed out. */
+  hint?: string
 }) {
   return (
     <button
@@ -54,8 +58,8 @@ function ToolButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      title={label}
-      className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm disabled:opacity-40"
+      title={hint ?? label}
+      className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-sm whitespace-nowrap disabled:opacity-40"
       style={{ border: '1px solid var(--border)', color: danger ? 'var(--danger)' : undefined }}
     >
       {children}
@@ -381,13 +385,19 @@ export default function Library({
     <div className="flex flex-col gap-4 pb-28">
       {banner}
 
+      {/*
+        A fixed-height, single-row bar: it never wraps, so choosing or clearing a selection
+        cannot make it taller or shorter and push the list up or down. If the buttons do not
+        fit (a narrow phone), the bar scrolls sideways instead.
+      */}
       <div
-        className="sticky top-0 z-10 -mx-4 flex flex-wrap items-center gap-2 px-4 py-3 md:-mx-6 md:px-6"
+        data-toolbar
+        className="sticky top-0 z-10 -mx-4 flex h-14 flex-nowrap items-center gap-2 overflow-hidden px-4 md:-mx-6 md:px-6"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
         {selecting ? (
           <>
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex shrink-0 items-center gap-2 text-sm whitespace-nowrap">
               <input
                 type="checkbox"
                 checked={allSelected}
@@ -398,11 +408,17 @@ export default function Library({
               />
               {selectedKeys.length} selected
             </label>
-            <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>:first-child]:ml-auto">
               <ToolButton onClick={() => void exportSelected()} label="Export selected as one Markdown file (X)">
                 Export
               </ToolButton>
-              {selectedNoteIds.length > 0 && <ToolButton onClick={() => void copySelected()}>Copy</ToolButton>}
+              <ToolButton
+                onClick={() => void copySelected()}
+                disabled={selectedNoteIds.length === 0}
+                hint={selectedNoteIds.length === 0 ? 'Select at least one note to copy' : 'Copy selected notes as Markdown (C)'}
+              >
+                Copy
+              </ToolButton>
               {inBin ? (
                 <>
                   <ToolButton onClick={() => void restoreSelected()}>Restore</ToolButton>
@@ -412,7 +428,13 @@ export default function Library({
                 </>
               ) : (
                 <>
-                  {selectedKeys.length === 1 && <ToolButton onClick={() => void renameSelected()}>Rename</ToolButton>}
+                  <ToolButton
+                    onClick={() => void renameSelected()}
+                    disabled={selectedKeys.length !== 1}
+                    hint={selectedKeys.length === 1 ? 'Rename (F2)' : 'Select exactly one note or folder to rename it'}
+                  >
+                    Rename
+                  </ToolButton>
                   <ToolButton onClick={() => setMoveOpen(true)} disabled={selectedNoteIds.length === 0}>
                     Move
                   </ToolButton>
@@ -449,8 +471,8 @@ export default function Library({
                 <BackIcon />
               </ToolButton>
             )}
-            <h1 className="min-w-0 flex-1 truncate text-xl font-semibold">{title}</h1>
-            <div className="flex flex-wrap items-center gap-2">
+            <h1 className="min-w-16 flex-1 truncate text-xl font-semibold">{title}</h1>
+            <div className="flex min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {view.kind === 'folder' && !searching && (
                 <>
                   <ToolButton onClick={() => void renameFolder()}>Rename</ToolButton>
@@ -478,7 +500,7 @@ export default function Library({
                 </ToolButton>
               )}
               {!isDesktop && visibleKeys.size > 0 && <ToolButton onClick={() => setSelectMode((v) => !v)}>{selectMode ? 'Done' : 'Select'}</ToolButton>}
-              <div className="flex overflow-hidden rounded-lg" style={{ border: '1px solid var(--border)' }} role="group" aria-label="Layout">
+              <div className="flex shrink-0 overflow-hidden rounded-lg" style={{ border: '1px solid var(--border)' }} role="group" aria-label="Layout">
                 {(['list', 'grid'] as const).map((m) => (
                   <button
                     key={m}
@@ -501,7 +523,7 @@ export default function Library({
                   aria-pressed={!!editorMode}
                   aria-label="Editor mode"
                   title="Editor mode: open notes in a panel on the right (E)"
-                  className="rounded-lg px-3 py-2"
+                  className="shrink-0 rounded-lg px-3 py-2"
                   style={editorMode ? { background: 'var(--accent)', color: 'var(--bg)' } : { border: '1px solid var(--border)' }}
                 >
                   <SplitIcon />

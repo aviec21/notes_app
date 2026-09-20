@@ -221,14 +221,70 @@ describe('Library on desktop', () => {
     await waitFor(async () => expect((await db.folders.get(ids.folder))?.name).toBe('Office'))
   })
 
-  it('offers Rename only when exactly one item is selected', async () => {
+  it('keeps Rename in place but greyed out unless exactly one item is selected', async () => {
     await seed()
     const user = userEvent.setup()
     render(<Harness data={await load()} />)
     await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
-    expect(screen.getByRole('button', { name: 'Rename' })).toBeTruthy()
+    const rename = () => screen.getByRole('button', { name: 'Rename' }) as HTMLButtonElement
+    expect(rename().disabled).toBe(false)
+
     await user.click(screen.getByRole('checkbox', { name: 'Select Ideas' }))
-    expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
+    expect(rename().disabled).toBe(true) // still there, so nothing moves
+    expect(rename().title).toContain('exactly one')
+  })
+
+  it('shows the same buttons in the same order for one item, several items, or a folder', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    const actions = () =>
+      [...document.querySelectorAll<HTMLButtonElement>('[data-toolbar] button')]
+        .map((b) => b.getAttribute('aria-label') ?? b.textContent?.trim())
+        .filter((name) => name && !name.startsWith('Select ') && name !== 'Select all')
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
+    const one = actions()
+    await user.click(screen.getByRole('checkbox', { name: 'Select Ideas' }))
+    const two = actions()
+    await user.click(screen.getByRole('checkbox', { name: 'Select Work' })) // now includes a folder
+    const withFolder = actions()
+
+    expect(one).toEqual(['Export selected as one Markdown file (X)', 'Copy', 'Rename', 'Move', 'Tag', 'Pin', 'Delete', 'Clear selection'])
+    expect(two).toEqual(one)
+    expect(withFolder).toEqual(one)
+  })
+
+  it('greys out Copy, Move and Tag when only a folder is selected', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Work' }))
+    for (const name of ['Copy', 'Move', 'Tag']) {
+      expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true)
+    }
+    expect((screen.getByRole('button', { name: 'Rename' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('keeps the top bar a single fixed-height row, selected or not, so the list never jumps', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} />)
+    const bar = () => document.querySelector<HTMLElement>('[data-toolbar]')!
+    const cls = () => bar().className
+
+    expect(cls()).toContain('h-14')
+    expect(cls()).toContain('flex-nowrap')
+    expect(cls()).not.toContain('flex-wrap ')
+    await user.click(screen.getByRole('button', { name: 'Select' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
+    expect(bar().className).toBe(cls()) // same bar, same height
+    expect(bar().className).toContain('h-14')
+    // Every button in the bar refuses to wrap onto a second line.
+    for (const button of bar().querySelectorAll('button')) {
+      if (button.closest('[role="group"]')) continue // the list/grid switch is one unit
+      expect(button.className).toContain('shrink-0')
+    }
   })
 
   it('copies the selected notes as Markdown', async () => {

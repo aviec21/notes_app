@@ -58,6 +58,13 @@ const app = (defaultPin = false) => (
 describe('desktop layout', () => {
   beforeEach(() => setScreen(true))
 
+  it('starts in list view', async () => {
+    render(app())
+    await screen.findByRole('button', { name: /Groceries/ })
+    expect(document.querySelector('[data-card="list"]')).not.toBeNull()
+    expect(document.querySelector('[data-card="grid"]')).toBeNull()
+  })
+
   it('shows a sidebar with search, folders, tags and the recycle bin', async () => {
     render(app())
     const sidebar = await screen.findByRole('navigation', { name: 'Library' })
@@ -240,6 +247,27 @@ describe('phone layout', () => {
     expect(screen.queryByRole('separator')).toBeNull()
     expect(screen.getByRole('button', { name: 'Recycle bin' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '#urgent' })).toBeTruthy()
+  })
+
+  it('starts in list view, even if grid was chosen before', async () => {
+    localStorage.setItem('notes.viewMode', 'grid') // an old choice from before list became the default
+    render(app())
+    await screen.findByRole('button', { name: /Groceries/ })
+    const cards = [...document.querySelectorAll<HTMLElement>('[data-card]')]
+    expect(cards.length).toBeGreaterThan(0)
+    expect(cards.every((c) => c.dataset.card === 'list')).toBe(true)
+  })
+
+  it('still remembers a grid choice made afterwards', async () => {
+    const user = userEvent.setup()
+    const first = render(app())
+    await user.click(await screen.findByRole('button', { name: 'Grid view' }))
+    expect(document.querySelector('[data-card="grid"]')).not.toBeNull()
+    first.unmount()
+
+    render(app())
+    await screen.findByRole('button', { name: /Groceries/ })
+    expect(document.querySelector('[data-card="grid"]')).not.toBeNull()
   })
 
   it('has a menu with Settings, How to use and Keyboard shortcuts', async () => {
