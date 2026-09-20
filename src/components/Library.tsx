@@ -3,6 +3,7 @@ import { BIN_RETENTION_DAYS } from '../../shared/sync'
 import type { ItemRef } from '../db/repo'
 import { useHotkeys } from '../hotkeys'
 import { copyText } from '../lib/clipboard'
+import { downloadBlob, exportSelection } from '../lib/export'
 import { liveFolders, parseKey, sectionsFor, type LibraryData, type View } from '../lib/library'
 import { noteToMarkdown } from '../lib/markdown'
 import { repo } from '../sync/runtime'
@@ -229,6 +230,22 @@ export default function Library({
     }
   }
 
+  /** Downloads the selected notes and folders as one Markdown file. */
+  async function exportSelected() {
+    if (!selecting) return
+    try {
+      const result = await exportSelection(selectedRefs)
+      downloadBlob(new Blob([result.text], { type: 'text/markdown;charset=utf-8' }), result.filename)
+      setToast(
+        `Downloaded ${result.filename} — ${plural(result.notes, 'note')}${result.folders ? ` from ${plural(result.folders, 'folder')}` : ''}.` +
+          (result.missingImages ? ` ${plural(result.missingImages, 'picture')} could not be included (not on this device).` : ''),
+      )
+    } catch (err) {
+      console.error('Export failed:', err)
+      setToast('The export could not be created. Please try again.')
+    }
+  }
+
   /** Copies the selected notes as Markdown, one after another. */
   async function copySelected() {
     const chosen = data.notes.filter((n) => selectedNoteIds.includes(n.id))
@@ -312,6 +329,7 @@ export default function Library({
       { keys: 'r', run: () => void restoreSelected(), when: () => selecting && inBin },
       { keys: 'f2', run: () => void renameSelected(), when: () => selectedKeys.length === 1 && !inBin },
       { keys: 'c', run: () => void copySelected(), when: () => selectedNoteIds.length > 0 },
+      { keys: 'x', run: () => void exportSelected(), when: () => selecting },
       { keys: 'e', run: () => onEditorMode?.(!editorMode), when: () => !!onEditorMode },
       {
         keys: 'enter',
@@ -357,6 +375,7 @@ export default function Library({
 
   const container =
     mode === 'grid' ? 'grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]' : 'flex flex-col gap-2'
+  // Grid columns share the row equally, so every card has the same width as well as height.
 
   return (
     <div className="flex flex-col gap-4 pb-28">
@@ -380,6 +399,9 @@ export default function Library({
               {selectedKeys.length} selected
             </label>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <ToolButton onClick={() => void exportSelected()} label="Export selected as one Markdown file (X)">
+                Export
+              </ToolButton>
               {selectedNoteIds.length > 0 && <ToolButton onClick={() => void copySelected()}>Copy</ToolButton>}
               {inBin ? (
                 <>

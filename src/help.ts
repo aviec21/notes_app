@@ -237,6 +237,13 @@ export const HELP_TOPICS: HelpTopic[] = [
 
   // --- Settings -----------------------------------------------------------------------
   {
+    id: 'export-selected',
+    section: 'Notes',
+    title: 'Export chosen notes and folders as one Markdown file',
+    body: 'Select one or more notes or folders and choose Export (or press X). A single .md file downloads straight away, with a heading structure that follows how your notes are arranged: one note becomes “# Title”; one folder becomes “# Folder” with each note as “## Title”; several items get a “# Notes export” title, a contents list, each folder as “## Folder” and its notes as “### Title”. Headings you wrote inside a note nest below its title. Pictures are embedded in the file, tables and charts become Markdown tables, and each note lists its tags and last-updated date.',
+    keywords: 'export markdown md download save file selected folder headings',
+  },
+  {
     id: 'export',
     section: 'Settings',
     title: 'Export all notes (backup)',

@@ -82,6 +82,26 @@ export async function imageUrl(id: string): Promise<string | null> {
   return pending
 }
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read picture'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+/** A picture as self-contained data (for files that must carry it), or null if unavailable. */
+export async function imageDataUrl(id: string): Promise<string | null> {
+  try {
+    const url = await imageUrl(id)
+    if (!url) return null
+    return await blobToDataUrl(await (await fetch(url)).blob())
+  } catch {
+    return null
+  }
+}
+
 /** Sends pictures that have not reached the server yet. Called before each sync push. */
 export async function uploadPendingImages(): Promise<void> {
   const pending = await db.images.where('uploaded').equals(0).toArray()

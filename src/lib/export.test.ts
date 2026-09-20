@@ -3,7 +3,13 @@ import 'fake-indexeddb/auto'
 import JSZip from 'jszip'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, repo } from '../sync/runtime'
-import { exportAllNotes, safeName } from './export'
+import { exportAllNotes, exportSelection, safeName } from './export'
+
+// Pictures are embedded as data; the test database cannot hold real image blobs.
+vi.mock('../images', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../images')>()),
+  imageDataUrl: async (id: string) => (id.startsWith('gone') ? null : 'data:image/webp;base64,QUJD'),
+}))
 
 async function entries(): Promise<JSZip> {
   const result = await exportAllNotes()
@@ -124,5 +130,101 @@ describe('exporting everything as Markdown', () => {
     const result = await exportAllNotes()
     expect(result.filename).toMatch(/^notes-export-\d{4}-\d{2}-\d{2}\.zip$/)
     expect(result.notes).toBe(1)
+  })
+})
+
+describe('exporting a chosen selection as one Markdown file', () => {
+  const note = (id: string) => ({ entity: 'note' as const, id })
+  const folder = (id: string) => ({ entity: 'folder' as const, id })
+
+  it('a single note becomes a file named after it, with its own headings nested', async () => {
+    const id = await repo.createNote()
+    await repo.update('note', id, {
+      title: 'Trip plan',
+      content: { type: 'doc', content: [{ type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Flights' }] }] },
+      contentText: 'Flights',
+    })
+    const result = await exportSelection([note(id)])
+    expect(result.filename).toBe('Trip plan.md')
+    expect(result.text).toContain('# Trip plan')
+    expect(result.text).toContain('## Flights')
+    expect(result.notes).toBe(1)
+  })
+
+  it('a folder brings its notes, sorted by title, under the folder heading', async () => {
+    const work = await repo.createFolder('Work')
+    for (const title of ['Zebra', 'Apple']) {
+      const id = await repo.createNote(work)
+      await repo.setNoteText(id, title, `${title} text`)
+    }
+    const elsewhere = await repo.createNote()
+    await repo.setNoteText(elsewhere, 'Unrelated', 'not exported')
+
+    const result = await exportSelection([folder(work)])
+    expect(result.filename).toBe('Work.md')
+    expect(result.text.indexOf('## Apple')).toBeGreaterThan(result.text.indexOf('# Work'))
+    expect(result.text.indexOf('## Apple')).toBeLessThan(result.text.indexOf('## Zebra'))
+    expect(result.text).not.toContain('Unrelated')
+    expect(result.folders).toBe(1)
+  })
+
+  it('lists a note once even when it and its folder are both selected', async () => {
+    const work = await repo.createFolder('Work')
+    const id = await repo.createNote(work)
+    await repo.setNoteText(id, 'Plan', 'plan text')
+    const other = await repo.createNote()
+    await repo.setNoteText(other, 'Loose', 'loose text')
+
+    const result = await exportSelection([folder(work), note(id), note(other)])
+    expect(result.filename).toMatch(/^notes-export-\d{4}-\d{2}-\d{2}\.md$/)
+    expect(result.text.match(/### Plan/g)).toHaveLength(1) // under the folder only
+    expect(result.text).toContain('## Loose') // beside the folder
+    expect(result.notes).toBe(2)
+  })
+
+  it('shows the folder name and tags on a loose note that lives in a folder', async () => {
+    const work = await repo.createFolder('Work')
+    const id = await repo.createNote(work)
+    await repo.setNoteText(id, 'Idea', 'text')
+    await repo.tagNotes([id], await repo.createTag('urgent'), true)
+    const other = await repo.createNote()
+    await repo.setNoteText(other, 'Second', 'text')
+
+    const result = await exportSelection([note(id), note(other)])
+    expect(result.text).toContain('Folder: Work')
+    expect(result.text).toContain('Tags: #urgent')
+  })
+
+  it('exports a folder that is in the recycle bin with the notes deleted along with it', async () => {
+    const old = await repo.createFolder('Old')
+    const inside = await repo.createNote(old)
+    await repo.setNoteText(inside, 'Kept inside', 'text')
+    const stray = await repo.createNote(old)
+    await repo.setNoteText(stray, 'Deleted earlier', 'text')
+    await repo.trashNotes([stray])
+    await repo.trashFolders([old])
+
+    const result = await exportSelection([folder(old)])
+    expect(result.text).toContain('## Kept inside')
+    expect(result.text).not.toContain('Deleted earlier') // it was binned on its own
+  })
+
+  it('embeds pictures in the file and counts the ones it could not include', async () => {
+    const id = await repo.createNote()
+    await repo.update('note', id, {
+      title: 'Pictures',
+      content: {
+        type: 'doc',
+        content: [
+          { type: 'noteImage', attrs: { imageId: 'here-1', alt: 'Map' } },
+          { type: 'noteImage', attrs: { imageId: 'gone-1', alt: 'Lost' } },
+        ],
+      },
+      contentText: 'Map Lost',
+    })
+    const result = await exportSelection([note(id)])
+    expect(result.text).toContain('![Map](data:image/webp;base64,QUJD)')
+    expect(result.text).toContain('could not be included')
+    expect(result.missingImages).toBe(1)
   })
 })

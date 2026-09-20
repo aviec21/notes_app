@@ -6,7 +6,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { LibraryData, View } from '../lib/library'
 import { db, repo } from '../sync/runtime'
 import Library from './Library'
+import { downloadBlob } from '../lib/export'
 import { DialogProvider } from './ui/Dialogs'
+
+// Saving a file needs a real browser; the test only checks what would be saved.
+vi.mock('../lib/export', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/export')>()),
+  downloadBlob: vi.fn(),
+}))
 
 // jsdom does not implement <dialog>'s modal methods; this stands in for a real browser.
 beforeAll(() => {
@@ -47,6 +54,7 @@ function Harness({
   data,
   view = { kind: 'root' },
   isDesktop = true,
+  mode = 'list',
   onOpenNote = () => {},
   onNavigate = () => {},
   onMode = () => {},
@@ -54,6 +62,7 @@ function Harness({
   data: LibraryData
   view?: View
   isDesktop?: boolean
+  mode?: 'list' | 'grid'
   onOpenNote?: (id: string) => void
   onNavigate?: (v: View) => void
   onMode?: (m: 'list' | 'grid') => void
@@ -64,7 +73,7 @@ function Harness({
         data={data}
         view={view}
         query=""
-        mode="list"
+        mode={mode}
         onMode={onMode}
         isDesktop={isDesktop}
         onNavigate={onNavigate}
@@ -251,6 +260,93 @@ describe('Library on desktop', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
     await user.keyboard('p')
     await waitFor(async () => expect((await db.notes.get(ids.loose))?.pinned).toBe(true))
+  })
+})
+
+describe('exporting the selection', () => {
+  const saved = () => vi.mocked(downloadBlob).mock.calls.at(-1)!
+
+  it('downloads one Markdown file with the chosen notes and folders, with headings', async () => {
+    await seed()
+    vi.mocked(downloadBlob).mockClear()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+
+    expect(screen.queryByRole('button', { name: /^Export/ })).toBeNull() // nothing selected yet
+    await user.click(screen.getByRole('checkbox', { name: 'Select Work' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
+    await user.click(screen.getByRole('button', { name: /^Export/ }))
+
+    await waitFor(() => expect(downloadBlob).toHaveBeenCalledTimes(1))
+    const [blob, filename] = saved() as [Blob, string]
+    expect(filename).toMatch(/^notes-export-\d{4}-\d{2}-\d{2}\.md$/)
+    expect(blob.type).toContain('text/markdown')
+    const text = await new Promise<string>((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.readAsText(blob)
+    })
+    expect(text).toContain('# Notes export')
+    expect(text).toContain('## Work') // the folder
+    expect(text).toContain('### Quarterly plan') // its note, one level below
+    expect(text).toContain('## Groceries') // the loose note, beside the folder
+    expect(text).not.toContain('Ideas') // not selected
+    expect(await screen.findByText(/Downloaded notes-export-/)).toBeTruthy()
+  })
+
+  it('exports with the X shortcut, and also from the recycle bin', async () => {
+    const ids = await seed()
+    await repo.trashNotes([ids.loose])
+    vi.mocked(downloadBlob).mockClear()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} view={{ kind: 'bin' }} />)
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
+    await user.keyboard('x')
+    await waitFor(() => expect(downloadBlob).toHaveBeenCalledTimes(1))
+    expect(saved()[1]).toBe('Groceries.md')
+  })
+})
+
+describe('card sizes', () => {
+  const cards = () => [...document.querySelectorAll<HTMLElement>('[data-card]')]
+
+  it('gives every list row the same height, however much a note contains', async () => {
+    const short = await repo.createNote()
+    await repo.setNoteText(short, 'Short', 'hi')
+    const long = await repo.createNote()
+    await repo.setNoteText(long, 'A very long note', 'word '.repeat(2000))
+    render(<Harness data={await load()} mode="list" />)
+
+    expect(cards().length).toBeGreaterThanOrEqual(2)
+    for (const card of cards()) {
+      expect(card.dataset.card).toBe('list')
+      expect(card.className).toContain('h-[4.5rem]')
+    }
+  })
+
+  it('gives every grid card the same height, and shows at most two lines of the note', async () => {
+    const short = await repo.createNote()
+    await repo.setNoteText(short, 'Short', 'hi')
+    const long = await repo.createNote()
+    await repo.setNoteText(long, 'A very long note', 'word '.repeat(2000))
+    render(<Harness data={await load()} mode="grid" />)
+
+    for (const card of cards()) {
+      expect(card.dataset.card).toBe('grid')
+      expect(card.className).toContain('h-36')
+    }
+    const preview = [...document.querySelectorAll<HTMLElement>('[data-card] span.line-clamp-2')]
+    expect(preview.length).toBeGreaterThanOrEqual(2)
+    // The text handed to the card is also capped, so a huge note never bloats the page.
+    for (const el of preview) expect((el.textContent ?? '').length).toBeLessThanOrEqual(160)
+  })
+
+  it('keeps folders the same size as notes', async () => {
+    await seed()
+    render(<Harness data={await load()} mode="grid" />)
+    const heights = new Set(cards().map((c) => c.className.match(/h-36/)?.[0]))
+    expect([...heights]).toEqual(['h-36'])
   })
 })
 

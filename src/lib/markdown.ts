@@ -15,6 +15,19 @@ interface Node {
 
 const escapeText = (text: string) => text.replace(/([\\`*_{}[\]()#+\-.!|])/g, '\\$1')
 
+export interface MarkdownOptions {
+  /** Pushes every heading in the note this many levels down (capped at level 6). */
+  headingOffset?: number
+  /**
+   * Where a picture's source comes from. Return null when the picture is unavailable.
+   * Without this, pictures point at an `images/<id>.webp` file beside the Markdown.
+   */
+  imageSrc?: (imageId: string) => string | null
+}
+
+// The converter is synchronous, so its options can safely be held here while it runs.
+let options: MarkdownOptions = {}
+
 function withMarks(text: string, marks: Mark[] = []): string {
   let out = text
   for (const mark of marks) {
@@ -98,7 +111,7 @@ function block(node: Node, indent: string): string {
     case 'paragraph':
       return inline(node.content)
     case 'heading':
-      return `${'#'.repeat(Number(node.attrs?.level ?? 1))} ${inline(node.content)}`
+      return `${'#'.repeat(Math.min(6, Number(node.attrs?.level ?? 1) + (options.headingOffset ?? 0)))} ${inline(node.content)}`
     case 'bulletList':
       return listItems(node, indent, () => '- ')
     case 'orderedList':
@@ -120,8 +133,13 @@ function block(node: Node, indent: string): string {
       return table(node)
     case 'chart':
       return chart(node)
-    case 'noteImage':
-      return `![${String(node.attrs?.alt ?? 'Picture')}](images/${String(node.attrs?.imageId ?? '')}.webp)`
+    case 'noteImage': {
+      const id = String(node.attrs?.imageId ?? '')
+      const alt = String(node.attrs?.alt ?? '') || 'Picture'
+      if (!options.imageSrc) return `![${alt}](images/${id}.webp)`
+      const src = options.imageSrc(id)
+      return src ? `![${alt}](${src})` : `*[Picture “${alt}” could not be included]*`
+    }
     case 'text':
       return inline([node])
     default:
@@ -130,8 +148,90 @@ function block(node: Node, indent: string): string {
 }
 
 /** Converts a note's rich-text document to Markdown. */
-export function docToMarkdown(doc: DocJson | unknown): string {
-  return block(doc as Node, '').trim()
+export function docToMarkdown(doc: DocJson | unknown, opts: MarkdownOptions = {}): string {
+  options = opts
+  try {
+    return block(doc as Node, '').trim()
+  } finally {
+    options = {}
+  }
+}
+
+export interface ExportNote {
+  title: string
+  content: unknown
+  updatedAt: number
+  tags: string[]
+  /** The note's folder, shown when the note is exported on its own. */
+  folderName?: string
+}
+
+export interface ExportGroup {
+  name: string
+  notes: ExportNote[]
+}
+
+const oneLine = (text: string, fallback: string) => text.replace(/\s+/g, ' ').trim() || fallback
+const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+
+function noteSection(note: ExportNote, level: number, opts: MarkdownOptions): string {
+  const details = [`Updated ${day(note.updatedAt)}`]
+  if (note.folderName) details.push(`Folder: ${note.folderName}`)
+  if (note.tags.length) details.push(`Tags: ${note.tags.map((t) => `#${t.replace(/\s+/g, '-')}`).join(' ')}`)
+
+  const body = docToMarkdown(note.content, { ...opts, headingOffset: level })
+  return [
+    `${'#'.repeat(Math.min(6, level))} ${oneLine(note.title, 'Untitled')}`,
+    `*${details.join(' · ')}*`,
+    body,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/**
+ * Builds one Markdown document from chosen folders and notes, with a heading hierarchy
+ * that follows how they are arranged:
+ *
+ *   one note        # Note title            (its own headings become ##, ###, …)
+ *   one folder      # Folder  →  ## Note    (note headings become ###, …)
+ *   several items   # Notes export  →  ## Folder  →  ### Note   (or ## Note if not in a folder)
+ *
+ * so the outline of the result always reads correctly in any Markdown viewer.
+ */
+export function selectionToMarkdown(
+  input: { groups: ExportGroup[]; loose: ExportNote[]; exportedOn: Date },
+  opts: MarkdownOptions = {},
+): string {
+  const { groups, loose } = input
+
+  if (groups.length === 0 && loose.length === 1) return `${noteSection(loose[0], 1, opts)}\n`
+
+  if (groups.length === 1 && loose.length === 0) {
+    const [group] = groups
+    const sections = group.notes.map((n) => noteSection({ ...n, folderName: undefined }, 2, opts))
+    return `${[`# ${oneLine(group.name, 'Folder')}`, ...(sections.length ? sections : ['*This folder has no notes.*'])].join('\n\n')}\n`
+  }
+
+  const count = groups.reduce((sum, g) => sum + g.notes.length, 0) + loose.length
+  const outline = [
+    ...groups.flatMap((g) => [`- ${oneLine(g.name, 'Folder')}`, ...g.notes.map((n) => `  - ${oneLine(n.title, 'Untitled')}`)]),
+    ...loose.map((n) => `- ${oneLine(n.title, 'Untitled')}`),
+  ].join('\n')
+
+  const parts = [
+    '# Notes export',
+    `*Exported ${day(input.exportedOn.getTime())} · ${count} ${count === 1 ? 'note' : 'notes'}*`,
+    '## Contents',
+    outline,
+  ]
+  for (const group of groups) {
+    parts.push(`## ${oneLine(group.name, 'Folder')}`)
+    if (group.notes.length === 0) parts.push('*This folder has no notes.*')
+    for (const note of group.notes) parts.push(noteSection({ ...note, folderName: undefined }, 3, opts))
+  }
+  for (const note of loose) parts.push(noteSection(note, 2, opts))
+  return `${parts.join('\n\n')}\n`
 }
 
 /** A whole note as Markdown: its title as a heading, then its body. */

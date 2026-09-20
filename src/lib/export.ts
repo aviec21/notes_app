@@ -1,7 +1,7 @@
 import type { FolderRecord, NoteRecord, TagRecord } from '../../shared/sync'
-import { imageUrl } from '../images'
+import { imageDataUrl, imageUrl } from '../images'
 import { db } from '../sync/runtime'
-import { imageIdsIn, noteToMarkdown } from './markdown'
+import { imageIdsIn, noteToMarkdown, selectionToMarkdown } from './markdown'
 
 export interface ExportResult {
   filename: string
@@ -127,6 +127,96 @@ export async function exportAllNotes(options: { includeBin?: boolean } = {}): Pr
     notes: wanted.length,
     images: included,
     missingImages: missing,
+  }
+}
+
+export interface SelectionExport {
+  filename: string
+  text: string
+  notes: number
+  folders: number
+  /** Pictures that could not be embedded (not on this device and no connection). */
+  missingImages: number
+}
+
+const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' })
+
+/**
+ * Builds a single Markdown file from the chosen notes and folders. A folder brings its
+ * notes; a note that is also inside a chosen folder appears once, under the folder.
+ */
+export async function exportSelection(items: { entity: 'note' | 'folder'; id: string }[]): Promise<SelectionExport> {
+  const [notes, folders, tags] = (await Promise.all([db.notes.toArray(), db.folders.toArray(), db.tags.toArray()])) as [
+    NoteRecord[],
+    FolderRecord[],
+    TagRecord[],
+  ]
+  const tagName = new Map(tags.map((t) => [t.id, t.name]))
+  const folderById = new Map(folders.map((f) => [f.id, f]))
+
+  const chosenFolders = folders.filter((f) => items.some((i) => i.entity === 'folder' && i.id === f.id))
+  const chosenNoteIds = new Set(items.filter((i) => i.entity === 'note').map((i) => i.id))
+
+  // Notes that belong to a chosen folder: those in it now, or binned together with it.
+  const inFolder = (folder: FolderRecord) =>
+    notes.filter((n) =>
+      folder.deletedAt === null
+        ? n.deletedAt === null && n.folderId === folder.id
+        : n.deletedAt !== null && n.deleteBatch === folder.deleteBatch && n.folderId === folder.id,
+    )
+
+  const covered = new Set<string>()
+  const toExport = (note: NoteRecord, showFolder: boolean) => ({
+    note,
+    exported: {
+      title: note.title,
+      content: note.content,
+      updatedAt: note.updatedAt,
+      tags: note.tagIds.map((id) => tagName.get(id)).filter((t): t is string => !!t),
+      folderName: showFolder && note.folderId ? folderById.get(note.folderId)?.name : undefined,
+    },
+  })
+
+  const groups = [...chosenFolders]
+    .sort((a, b) => byName(a.name, b.name))
+    .map((folder) => {
+      const members = inFolder(folder).sort((a, b) => byName(a.title, b.title))
+      for (const n of members) covered.add(n.id)
+      return { folder, members: members.map((n) => toExport(n, false)) }
+    })
+  const loose = notes
+    .filter((n) => chosenNoteIds.has(n.id) && !covered.has(n.id))
+    .sort((a, b) => byName(a.title, b.title))
+    .map((n) => toExport(n, true))
+
+  // Embed each picture once, so the single file is complete on its own.
+  const wanted = new Set<string>()
+  for (const { note } of [...groups.flatMap((g) => g.members), ...loose]) for (const id of imageIdsIn(note.content)) wanted.add(id)
+  const sources = new Map<string, string | null>()
+  await Promise.all([...wanted].map(async (id) => sources.set(id, await imageDataUrl(id))))
+
+  const text = selectionToMarkdown(
+    {
+      groups: groups.map((g) => ({ name: g.folder.name, notes: g.members.map((m) => m.exported) })),
+      loose: loose.map((l) => l.exported),
+      exportedOn: new Date(),
+    },
+    { imageSrc: (id) => sources.get(id) ?? null },
+  )
+
+  const noteCount = groups.reduce((sum, g) => sum + g.members.length, 0) + loose.length
+  const stamp = new Date().toISOString().slice(0, 10)
+  const single = groups.length + loose.length === 1
+  const filename = single
+    ? `${safeName(groups.length === 1 ? groups[0].folder.name : loose[0].note.title, 'Notes')}.md`
+    : `notes-export-${stamp}.md`
+
+  return {
+    filename,
+    text,
+    notes: noteCount,
+    folders: groups.length,
+    missingImages: [...sources.values()].filter((v) => v === null).length,
   }
 }
 

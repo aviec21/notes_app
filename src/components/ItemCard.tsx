@@ -1,4 +1,4 @@
-import { useEffect, useRef, type MouseEvent, type PointerEvent } from 'react'
+﻿import { useEffect, useRef, type MouseEvent, type PointerEvent } from 'react'
 import type { TagRecord } from '../../shared/sync'
 import { snippetAround, type Item } from '../lib/library'
 import { FolderIcon, PinIcon } from './ui/Icons'
@@ -71,7 +71,7 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
   const detail = isNote
     ? query.trim()
       ? snippetAround(item.note.contentText, query)
-      : item.note.contentText.trim().slice(0, 200) || 'No text'
+      : item.note.contentText.trim().slice(0, 160) || 'No text'
     : plural(item.noteCount, 'note')
   const when = isNote ? item.note.updatedAt : item.folder.updatedAt
   const meta = item.daysLeft !== undefined ? `${plural(item.daysLeft, 'day')} left` : formatWhen(when)
@@ -87,10 +87,34 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
     else onOpen()
   }
 
+
   const grid = mode === 'grid'
+  const shownChips = chips.slice(0, 2)
+  const chipList = (
+    <span className="flex min-w-0 shrink-0 items-center gap-1 overflow-hidden">
+      {shownChips.map((tag) => (
+        <span
+          key={tag.id}
+          className="max-w-24 truncate rounded-full px-2 text-xs leading-5"
+          style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}
+        >
+          #{tag.name}
+        </span>
+      ))}
+      {chips.length > shownChips.length && (
+        <span className="text-xs" style={{ color: 'var(--muted)' }}>
+          +{chips.length - shownChips.length}
+        </span>
+      )}
+    </span>
+  )
+
+  // Every card is the same size in a given layout, so a page of notes reads as an even
+  // grid or list no matter how long each note is. Only a short preview is ever shown.
   return (
     <div
-      className={`relative rounded-xl ${grid ? 'h-full' : ''}`}
+      data-card={grid ? 'grid' : 'list'}
+      className={`relative overflow-hidden rounded-xl ${grid ? 'h-36' : 'h-[4.5rem]'}`}
       style={{
         background: 'var(--surface)',
         border: `1px solid ${selected || active ? 'var(--accent)' : 'var(--border)'}`,
@@ -103,7 +127,7 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
           checked={selected}
           onChange={onToggle}
           aria-label={`Select ${title}`}
-          className="absolute top-3.5 left-3 z-10 h-4 w-4 cursor-pointer"
+          className={`absolute left-3 z-10 h-4 w-4 cursor-pointer ${grid ? 'top-3.5' : 'top-1/2 -translate-y-1/2'}`}
           style={{ accentColor: 'var(--accent)' }}
         />
       )}
@@ -113,9 +137,9 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
         onDoubleClick={(e) => e.preventDefault()}
         {...longPressHandlers}
         aria-current={active ? 'true' : undefined}
-        className={`block h-full w-full rounded-xl py-3 pr-3 text-left select-none [-webkit-touch-callout:none] ${showCheckbox ? 'pl-10' : 'pl-3'}`}
+        className={`flex h-full w-full flex-col rounded-xl py-3 pr-3 text-left select-none [-webkit-touch-callout:none] ${grid ? 'justify-start' : 'justify-center'} ${showCheckbox ? 'pl-10' : 'pl-3'}`}
       >
-        <span className="flex items-center gap-2">
+        <span className="flex w-full items-center gap-2">
           {!isNote && <FolderIcon />}
           <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
           {pinned && (
@@ -129,33 +153,27 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
             </span>
           )}
         </span>
-        <span
-          className={`mt-1 block text-sm break-words ${grid ? 'line-clamp-5' : 'line-clamp-1'}`}
-          style={{ color: 'var(--muted)' }}
-        >
-          {detail}
-        </span>
-        {(chips.length > 0 || grid) && (
-          <span className="mt-2 flex flex-wrap items-center gap-1.5">
-            {chips.slice(0, 3).map((tag) => (
-              <span
-                key={tag.id}
-                className="rounded-full px-2 py-0.5 text-xs"
-                style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}
-              >
-                #{tag.name}
-              </span>
-            ))}
-            {chips.length > 3 && (
-              <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                +{chips.length - 3}
-              </span>
-            )}
-            {grid && (
-              <span className="ml-auto text-xs" style={{ color: 'var(--muted)' }}>
+
+        {grid ? (
+          <>
+            {/* At most two lines of preview. */}
+            <span className="mt-1 line-clamp-2 min-h-10 w-full text-sm leading-5 break-words" style={{ color: 'var(--muted)' }}>
+              {detail}
+            </span>
+            <span className="mt-auto flex w-full items-center justify-between gap-2">
+              {chipList}
+              <span className="shrink-0 text-xs" style={{ color: 'var(--muted)' }}>
                 {meta}
               </span>
-            )}
+            </span>
+          </>
+        ) : (
+          <span className="mt-0.5 flex w-full items-center gap-2">
+            {/* One line of preview, with any tags to its right. */}
+            <span className="min-w-0 flex-1 truncate text-sm" style={{ color: 'var(--muted)' }}>
+              {detail}
+            </span>
+            {chipList}
           </span>
         )}
       </button>

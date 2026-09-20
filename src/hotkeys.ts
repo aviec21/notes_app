@@ -75,6 +75,7 @@ export const SHORTCUTS: { group: string; keys: string; description: string }[] =
   { group: 'Notes list', keys: 'M', description: 'Move selected notes to a folder' },
   { group: 'Notes list', keys: 'T', description: 'Tag selected notes' },
   { group: 'Notes list', keys: 'C', description: 'Copy selected notes as Markdown' },
+  { group: 'Notes list', keys: 'X', description: 'Export selected notes and folders as one Markdown file' },
   { group: 'Notes list', keys: 'Delete', description: 'Move selected to the bin' },
   { group: 'Notes list', keys: 'Esc', description: 'Clear selection, then search, then go back' },
   { group: 'Recycle bin', keys: 'R', description: 'Restore selected' },
