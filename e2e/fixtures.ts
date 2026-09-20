@@ -46,11 +46,14 @@ export const test = base.extend<{
 }>({
   // eslint-disable-next-line no-empty-pattern
   server: async ({}, provide) => provide(new FakeServer()),
-  device: async ({ browser, server, contextOptions }, provide) => {
+  device: async ({ browser, server, contextOptions, colorScheme }, provide) => {
     const opened: Device[] = []
     await provide(async (options = {}) => {
       const device = await open(browser, server, {
         ...contextOptions,
+        // (Not part of contextOptions, so pass it on: otherwise Firefox and Safari would test
+        // the "dark theme" in light mode.)
+        colorScheme,
         acceptDownloads: true,
         serviceWorkers: options.serviceWorker ? 'allow' : 'block',
       })

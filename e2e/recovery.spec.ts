@@ -92,10 +92,11 @@ test('the reset form says what is wrong before sending anything', async ({ brows
 
 test('with no recovery code yet, a banner offers to create one in Settings', async ({ browser, server }, testInfo) => {
   server.recoveryCode = null
+  server.pin = '482913' // (with the default PIN, the "change your PIN" banner comes first)
   const context = await browser.newContext({ serviceWorkers: 'block' })
   await server.attach(context)
   const page = await context.newPage()
-  await signIn(page)
+  await signIn(page, '482913')
   const phone = testInfo.project.name === 'android'
 
   await expect(page.getByText('You have no recovery code yet.')).toBeVisible()
@@ -108,14 +109,15 @@ test('with no recovery code yet, a banner offers to create one in Settings', asy
   await dialog.getByRole('button', { name: 'Create code' }).click()
   await expect(dialog.getByRole('alert')).toContainText('not your current PIN')
 
-  await dialog.getByLabel('Current PIN for recovery code').fill('123456')
+  await dialog.getByLabel('Current PIN for recovery code').fill('482913')
   await dialog.getByRole('button', { name: 'Create code' }).click()
   const code = (await dialog.getByLabel('Your recovery code').textContent())!.trim()
   expect(code).toMatch(/^[A-Z0-9]{4}(-[A-Z0-9]{4}){3}$/)
   expect(server.recoveryCode).toBe(code)
 
   await dialog.getByLabel('I have saved this code somewhere safe').check()
-  await dialog.getByRole('button', { name: 'Done' }).click()
+  await dialog.getByRole('button', { name: 'Done' }).first().click() // (Settings has its own Done below)
+  await dialog.getByRole('button', { name: 'Done' }).click() // now the only one: closes Settings
   // The banner is gone now that a code exists.
   await expect(page.getByText('You have no recovery code yet.')).toHaveCount(0)
 
