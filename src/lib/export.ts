@@ -1,7 +1,7 @@
 import type { FolderRecord, NoteRecord, TagRecord } from '../../shared/sync'
 import { imageUrl } from '../images'
 import { db } from '../sync/runtime'
-import { docToMarkdown, imageIdsIn } from './markdown'
+import { imageIdsIn, noteToMarkdown } from './markdown'
 
 export interface ExportResult {
   filename: string
@@ -91,9 +91,7 @@ export async function exportAllNotes(options: { includeBin?: boolean } = {}): Pr
     const file = uniqueName(used, safeName(note.title), '.md')
     const path = `${directory}/${file}`
     const noteTags = note.tagIds.map((id) => tagName.get(id)).filter((t): t is string => !!t)
-    const body = docToMarkdown(note.content)
-    const heading = `# ${note.title.trim() || 'Untitled'}`
-    zip.file(path, `${frontMatter(note, directory, noteTags)}\n\n${heading}\n\n${body}\n`)
+    zip.file(path, `${frontMatter(note, directory, noteTags)}\n\n${noteToMarkdown(note.title, note.content)}\n`)
 
     for (const id of imageIdsIn(note.content)) imageIds.add(id)
     index.push(`- [${note.title.trim() || 'Untitled'}](${encodeURI(path)})`)

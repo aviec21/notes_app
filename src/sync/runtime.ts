@@ -23,6 +23,12 @@ export function startSync(onUnauthorized: () => void): () => void {
   engine.setUnauthorizedHandler(onUnauthorized)
   const run = () => void engine.syncNow()
 
+  // Clear anything whose 30 days in the recycle bin are up, then sync those deletions.
+  void repo
+    .purgeExpired()
+    .then((count) => count > 0 && run())
+    .catch((err: unknown) => console.error('Could not empty expired bin items:', err))
+
   let editTimer: ReturnType<typeof setTimeout> | undefined
   const stopWatchingEdits = repo.onLocalChange(() => {
     clearTimeout(editTimer)

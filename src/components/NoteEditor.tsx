@@ -8,6 +8,9 @@ import Toolbar from '../editor/Toolbar'
 import { useHotkeys } from '../hotkeys'
 import { useIsDesktop, useLibraryData } from '../hooks'
 import { compressImage, storeImage } from '../images'
+import { copyText } from '../lib/clipboard'
+import { noteToMarkdown } from '../lib/markdown'
+import CopyMenu from './CopyMenu'
 import { effectiveFolderId, liveFolders } from '../lib/library'
 import { db, repo } from '../sync/runtime'
 import SyncStatus from './SyncStatus'
@@ -30,11 +33,13 @@ function Fields({
   note,
   flushRef,
   toolbarSlot,
+  copySlot,
   isDesktop,
 }: {
   note: NoteRecord
   flushRef: RefObject<Flush>
   toolbarSlot: HTMLElement | null
+  copySlot: HTMLElement | null
   isDesktop: boolean
 }) {
   const [title, setTitle] = useState(note.title)
@@ -158,6 +163,16 @@ function Fields({
     <Toolbar editor={editor} placement={isDesktop ? 'top' : 'bottom'} onInsertImage={() => fileInput.current?.click()} />
   ) : null
 
+  useHotkeys([
+    {
+      keys: 'mod+shift+c',
+      inInput: true,
+      run: () => {
+        if (editor) void copyText(noteToMarkdown(latest.current.title, editor.getJSON()))
+      },
+    },
+  ])
+
   return (
     <>
       <input
@@ -174,6 +189,7 @@ function Fields({
         maxLength={1000}
         className="w-full bg-transparent text-2xl font-semibold outline-none"
       />
+      {copySlot && createPortal(<CopyMenu editor={editor} title={title} />, copySlot)}
       <EditorContent editor={editor} className="min-h-[50vh]" />
       <input
         ref={fileInput}
@@ -359,6 +375,7 @@ export default function NoteEditor({
   const pane = useRef<HTMLDivElement>(null)
   const isDesktop = useIsDesktop()
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null)
+  const [copySlot, setCopySlot] = useState<HTMLDivElement | null>(null)
 
   // Full screen: the device's Back button (and the browser's) returns to the list.
   useEffect(() => {
@@ -418,6 +435,7 @@ export default function NoteEditor({
             )}
           </button>
           <SyncStatus />
+          <div ref={setCopySlot} />
           <button type="button" onClick={() => void trash()} className={buttonClass} style={{ border: '1px solid var(--border)', color: 'var(--danger)' }}>
             <TrashIcon /> Delete
           </button>
@@ -425,7 +443,9 @@ export default function NoteEditor({
         {isDesktop && <div ref={setToolbarSlot} className="-mx-1 pb-1" />}
       </header>
       {note?.id === id && <NoteMeta note={note} onOpenTag={onOpenTag} />}
-      {note?.id === id && <Fields key={id} note={note} flushRef={flushRef} toolbarSlot={toolbarSlot} isDesktop={isDesktop} />}
+      {note?.id === id && (
+        <Fields key={id} note={note} flushRef={flushRef} toolbarSlot={toolbarSlot} copySlot={copySlot} isDesktop={isDesktop} />
+      )}
     </div>
   )
 }

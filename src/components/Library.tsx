@@ -1,8 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { BIN_RETENTION_DAYS } from '../../shared/sync'
 import type { ItemRef } from '../db/repo'
 import { useHotkeys } from '../hotkeys'
+import { copyText } from '../lib/clipboard'
 import { liveFolders, parseKey, sectionsFor, type LibraryData, type View } from '../lib/library'
+import { noteToMarkdown } from '../lib/markdown'
 import { repo } from '../sync/runtime'
 import ItemCard from './ItemCard'
 import { MoveDialog, TagsDialog } from './PickerDialogs'
@@ -81,6 +83,13 @@ export default function Library({
   const [selectMode, setSelectMode] = useState(false)
   const [moveOpen, setMoveOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 2500)
+    return () => clearTimeout(timer)
+  }, [toast])
 
   const searching = query.trim().length > 0
   const inBin = view.kind === 'bin' && !searching
@@ -220,6 +229,19 @@ export default function Library({
     }
   }
 
+  /** Copies the selected notes as Markdown, one after another. */
+  async function copySelected() {
+    const chosen = data.notes.filter((n) => selectedNoteIds.includes(n.id))
+    if (chosen.length === 0) return
+    const text = chosen.map((n) => noteToMarkdown(n.title, n.content)).join('\n\n---\n\n')
+    const result = await copyText(text)
+    setToast(
+      result === 'failed'
+        ? 'Could not copy. Open the note and copy from there.'
+        : `Copied ${chosen.length} ${chosen.length === 1 ? 'note' : 'notes'} as Markdown.`,
+    )
+  }
+
   async function renameSelected() {
     if (selectedRefs.length !== 1) return
     await renameItem(selectedRefs[0])
@@ -289,6 +311,7 @@ export default function Library({
       { keys: 't', run: () => setTagsOpen(true), when: () => selectedNoteIds.length > 0 && !inBin },
       { keys: 'r', run: () => void restoreSelected(), when: () => selecting && inBin },
       { keys: 'f2', run: () => void renameSelected(), when: () => selectedKeys.length === 1 && !inBin },
+      { keys: 'c', run: () => void copySelected(), when: () => selectedNoteIds.length > 0 },
       { keys: 'e', run: () => onEditorMode?.(!editorMode), when: () => !!onEditorMode },
       {
         keys: 'enter',
@@ -357,6 +380,7 @@ export default function Library({
               {selectedKeys.length} selected
             </label>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              {selectedNoteIds.length > 0 && <ToolButton onClick={() => void copySelected()}>Copy</ToolButton>}
               {inBin ? (
                 <>
                   <ToolButton onClick={() => void restoreSelected()}>Restore</ToolButton>
@@ -477,6 +501,12 @@ export default function Library({
           </>
         )}
       </div>
+
+      {toast && (
+        <p role="status" className="rounded-lg px-3 py-2 text-sm" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+          {toast}
+        </p>
+      )}
 
       {view.kind === 'bin' && !searching && (
         <p className="text-sm" style={{ color: 'var(--muted)' }}>

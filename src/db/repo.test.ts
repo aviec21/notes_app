@@ -96,6 +96,30 @@ describe('folders and the recycle bin', () => {
     expect(await db.folders.count()).toBe(0)
   })
 
+  it('clears items whose 30 days in the bin are up, and leaves newer ones alone', async () => {
+    const { db, repo } = setup()
+    const old = await noteIn(repo, 'Old')
+    const recent = await noteIn(repo, 'Recent')
+    const live = await noteIn(repo, 'Live')
+    const oldFolder = await repo.createFolder('Old folder')
+    const inside = await noteIn(repo, 'Inside', oldFolder)
+
+    const day = 24 * 60 * 60 * 1000
+    await repo.trashNotes([old, recent])
+    await repo.trashFolders([oldFolder])
+    await db.notes.update(old, { deletedAt: Date.now() - 31 * day })
+    await db.notes.update(inside, { deletedAt: Date.now() - 31 * day })
+    await db.folders.update(oldFolder, { deletedAt: Date.now() - 31 * day })
+
+    expect(await repo.purgeExpired()).toBe(2) // the folder and the stand-alone note
+    expect(await db.notes.get(old)).toBeUndefined()
+    expect(await db.notes.get(inside)).toBeUndefined() // it went with its folder
+    expect(await db.folders.get(oldFolder)).toBeUndefined()
+    expect(await db.notes.get(recent)).toBeDefined()
+    expect(await db.notes.get(live)).toBeDefined()
+    expect(await repo.purgeExpired()).toBe(0)
+  })
+
   it('queues permanent deletes so the server and other devices learn of them', async () => {
     const { db, repo } = setup()
     const id = await noteIn(repo, 'Synced note')

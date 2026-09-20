@@ -67,6 +67,11 @@ async function tiptap(): Promise<Editor> {
 
 const saved = () => db.notes.get(noteId)
 
+/** Replaces the clipboard (call after userEvent.setup(), which installs its own). */
+function setClipboard(value: Record<string, unknown>) {
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value })
+}
+
 describe('note editor', () => {
   it('shows the existing text and saves new text, keeping the plain text searchable', async () => {
     render(editorView())
@@ -297,6 +302,70 @@ describe('note editor', () => {
     await user.type(field, 'SAME{Enter}') // the same name in different letters
     await waitFor(async () => expect((await saved())?.tagIds).toHaveLength(1))
     expect(await db.tags.count()).toBe(1)
+  })
+
+  it('copies the whole note, formatted, with plain text alongside', async () => {
+    const user = userEvent.setup() // installs its own clipboard, so ours goes in afterwards
+    const written: Record<string, Blob>[] = []
+    setClipboard({ write: async (items: { items: Record<string, Blob> }[]) => void written.push(items[0].items) })
+    vi.stubGlobal(
+      'ClipboardItem',
+      class {
+        items: Record<string, Blob>
+        constructor(items: Record<string, Blob>) {
+          this.items = items
+        }
+      },
+    )
+    render(editorView())
+    const editor = await tiptap()
+    editor.commands.selectAll()
+    await user.click(screen.getByRole('button', { name: 'Bold' }))
+
+    await user.click(screen.getByRole('button', { name: 'Copy note' }))
+    await user.click(screen.getByRole('menuitem', { name: /Copy note/ }))
+
+    await waitFor(() => expect(written).toHaveLength(1))
+    const html = await written[0]['text/html'].text()
+    expect(html).toContain('<h1>Draft</h1>')
+    expect(html).toContain('<strong>first words</strong>')
+    expect(await written[0]['text/plain'].text()).toBe('Draft\n\nfirst words')
+    expect(await screen.findByText('Copied.')).toBeTruthy()
+    vi.unstubAllGlobals()
+  })
+
+  it('copies the note as Markdown', async () => {
+    const user = userEvent.setup()
+    const copied: string[] = []
+    setClipboard({ writeText: async (text: string) => void copied.push(text) })
+    render(editorView())
+    await tiptap()
+
+    await user.click(screen.getByRole('button', { name: 'Copy note' }))
+    await user.click(screen.getByRole('menuitem', { name: /Copy as Markdown/ }))
+    await waitFor(() => expect(copied).toEqual(['# Draft\n\nfirst words']))
+  })
+
+  it('copies as Markdown with Ctrl+Shift+C', async () => {
+    const user = userEvent.setup()
+    const copied: string[] = []
+    setClipboard({ writeText: async (text: string) => void copied.push(text) })
+    render(editorView())
+    await tiptap()
+    await user.keyboard('{Control>}{Shift>}c{/Shift}{/Control}')
+    await waitFor(() => expect(copied).toEqual(['# Draft\n\nfirst words']))
+  })
+
+  it('says so when the browser refuses to copy', async () => {
+    const user = userEvent.setup()
+    const refuse = async () => Promise.reject(new Error('no'))
+    setClipboard({ write: refuse, writeText: refuse })
+    document.execCommand = vi.fn(() => false)
+    render(editorView())
+    await tiptap()
+    await user.click(screen.getByRole('button', { name: 'Copy note' }))
+    await user.click(screen.getByRole('menuitem', { name: /Copy plain text/ }))
+    expect(await screen.findByText(/Could not copy/)).toBeTruthy()
   })
 
   it('shows a rename made elsewhere while the note is open', async () => {

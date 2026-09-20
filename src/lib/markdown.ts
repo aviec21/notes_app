@@ -134,6 +134,11 @@ export function docToMarkdown(doc: DocJson | unknown): string {
   return block(doc as Node, '').trim()
 }
 
+/** A whole note as Markdown: its title as a heading, then its body. */
+export function noteToMarkdown(title: string, doc: DocJson | unknown): string {
+  return `# ${title.trim() || 'Untitled'}\n\n${docToMarkdown(doc)}`
+}
+
 /** Collects the ids of every picture used in a document. */
 export function imageIdsIn(doc: unknown): string[] {
   const ids: string[] = []

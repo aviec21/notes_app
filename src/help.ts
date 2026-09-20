@@ -45,6 +45,13 @@ export const HELP_TOPICS: HelpTopic[] = [
     keywords: 'multiple bulk checkbox long press hold multi',
   },
   {
+    id: 'copy',
+    section: 'Notes',
+    title: 'Copy a note, or part of one',
+    body: 'Select text inside a note and copy it as usual (Ctrl+C) — formatting, tables and pictures come along when you paste into another note. To copy a whole note, use the copy button in its header: “Copy note” keeps the formatting and embeds the pictures, so it can be pasted into email or a document; “Copy as Markdown” (Ctrl+Shift+C) gives plain text with # headings and **bold**; “Copy plain text” gives the words alone. In the list, select notes and choose Copy (or press C) to copy them all as Markdown.',
+    keywords: 'copy paste clipboard duplicate share markdown',
+  },
+  {
     id: 'layout',
     section: 'Notes',
     title: 'List or grid view',

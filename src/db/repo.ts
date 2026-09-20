@@ -1,4 +1,5 @@
 import {
+  BIN_RETENTION_DAYS,
   fieldsOf,
   type DocJson,
   type EntityName,
@@ -319,6 +320,28 @@ export class Repo {
       }
       await this.purge(entity, id)
     }
+  }
+
+  /**
+   * Deletes for good anything that has been in the bin longer than the retention period.
+   * The server does this daily too; this is the safety net for when that job is not set up,
+   * and it keeps a device that has been offline for a long time tidy.
+   */
+  async purgeExpired(now = Date.now()): Promise<number> {
+    const cutoff = now - BIN_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    const expired = (item: { deletedAt: number | null }) => item.deletedAt !== null && item.deletedAt < cutoff
+    const folders = await this.db.folders.filter(expired).toArray()
+    // Notes binned together with one of those folders go when the folder does.
+    const batches = new Set(folders.map((f) => f.deleteBatch).filter((b): b is string => b !== null))
+    const notes = (await this.db.notes.filter(expired).toArray()).filter(
+      (n) => !(n.deleteBatch && batches.has(n.deleteBatch)),
+    )
+    if (folders.length + notes.length === 0) return 0
+    await this.deleteForever([
+      ...folders.map((f) => ({ entity: 'folder' as const, id: f.id })),
+      ...notes.map((n) => ({ entity: 'note' as const, id: n.id })),
+    ])
+    return folders.length + notes.length
   }
 
   async emptyBin(): Promise<void> {

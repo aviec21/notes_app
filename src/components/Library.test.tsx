@@ -222,6 +222,28 @@ describe('Library on desktop', () => {
     expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull()
   })
 
+  it('copies the selected notes as Markdown', async () => {
+    await seed()
+    const user = userEvent.setup() // installs its own clipboard, so ours goes in afterwards
+    const copied: string[] = []
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (text: string) => void copied.push(text) },
+    })
+    render(<Harness data={await load()} />)
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Ideas' }))
+    await user.click(screen.getByRole('button', { name: 'Copy' }))
+
+    await waitFor(() => expect(copied).toHaveLength(1))
+    expect(copied[0]).toContain('# Groceries')
+    expect(copied[0]).toContain('milk and eggs')
+    expect(copied[0]).toContain('\n\n---\n\n') // the notes are separated
+    expect(copied[0]).toContain('# Ideas')
+    expect(await screen.findByText('Copied 2 notes as Markdown.')).toBeTruthy()
+  })
+
   it('pins the selection with the P shortcut', async () => {
     const ids = await seed()
     const user = userEvent.setup()
