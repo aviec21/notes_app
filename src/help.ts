@@ -228,6 +228,27 @@ export const HELP_TOPICS: HelpTopic[] = [
     keywords: 'duplicate copy two versions',
   },
   {
+    id: 'refused',
+    section: 'Sync & devices',
+    title: '“changes were refused by the server”',
+    body: 'If a note shows “1 change was refused by the server” next to the sync status, that change could not be saved to the server, usually because something in it was too large (a title over 1,000 characters, for instance). It is still on this device and nothing else is affected. Shorten it and edit the note again to sync it.',
+    keywords: 'refused rejected error too large sync problem',
+  },
+  {
+    id: 'storage',
+    section: 'Sync & devices',
+    title: 'Is my data safe on this device?',
+    body: 'Notes are kept on the device you are using and copied to the server whenever you are online. The app asks your browser not to clear its stored data; Settings → “Storage on this device” tells you whether it agreed. If it did not, sync regularly, since notes that have synced are always safe on the server.',
+    keywords: 'storage cleared lost safe persistent space quota',
+  },
+  {
+    id: 'long-lists',
+    section: 'Notes',
+    title: 'Very long lists',
+    body: 'The list shows 60 notes at a time and loads more as you scroll (or press “Show more”). Select all still selects everything, not just what is showing, and search always looks through every note.',
+    keywords: 'many thousands slow scroll more load pages',
+  },
+  {
     id: 'install',
     section: 'Sync & devices',
     title: 'Install the app on your phone',

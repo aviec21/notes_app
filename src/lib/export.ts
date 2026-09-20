@@ -1,5 +1,5 @@
 import type { FolderRecord, NoteRecord, TagRecord } from '../../shared/sync'
-import { imageDataUrl, imageUrl } from '../images'
+import { bytesOf, imageBlobOf, imageDataUrl, imageUrl } from '../images'
 import { db } from '../sync/runtime'
 import { imageIdsIn, noteToMarkdown, selectionToMarkdown } from './markdown'
 
@@ -35,17 +35,6 @@ function uniqueName(used: Set<string>, base: string, extension: string): string 
 }
 
 const isoDate = (ms: number) => new Date(ms).toISOString()
-
-/** A picture's bytes (older Safari has no Blob.arrayBuffer). */
-async function bytesOf(blob: Blob): Promise<ArrayBuffer> {
-  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as ArrayBuffer)
-    reader.onerror = () => reject(reader.error ?? new Error('Could not read picture'))
-    reader.readAsArrayBuffer(blob)
-  })
-}
 
 function frontMatter(note: NoteRecord, folder: string, tags: string[]): string {
   const lines = [
@@ -100,13 +89,12 @@ export async function exportAllNotes(options: { includeBin?: boolean } = {}): Pr
   let included = 0
   let missing = 0
   for (const id of imageIds) {
-    const local = await db.images.get(id)
-    let blob = local?.blob
-    if (!blob) {
+    let row = await db.images.get(id)
+    if (!row) {
       // Not on this device: fetch it once (only possible while online).
-      const url = await imageUrl(id)
-      if (url) blob = await db.images.get(id).then((row) => row?.blob)
+      if (await imageUrl(id)) row = await db.images.get(id)
     }
+    const blob = row ? imageBlobOf(row) : undefined
     if (blob) {
       // Raw bytes rather than the Blob itself: every environment can write those.
       zip.file(`images/${id}.webp`, await bytesOf(blob))

@@ -222,6 +222,71 @@ describe('syncing between devices', () => {
     expect((await b.db.tags.get(tagId))?.name).toBe('travel')
   })
 
+  it('brings a whole large library to a new device across many pages', async () => {
+    const server = new TestServer()
+    const a = device(server)
+    for (let i = 0; i < 250; i++) {
+      const id = await a.repo.createNote()
+      await a.repo.setNoteText(id, `Note ${i}`, `body ${i}`)
+    }
+    await a.engine.syncNow() // pushes in batches
+
+    const b = device(server)
+    await b.engine.syncNow() // pulls 250 records over three pages
+    expect(await b.db.notes.count()).toBe(250)
+    expect((await b.db.notes.toArray()).map((n) => n.title).sort()).toEqual(
+      (await a.db.notes.toArray()).map((n) => n.title).sort(),
+    )
+  })
+
+  it('keeps unsent local edits and deletions when a big page arrives', async () => {
+    const server = new TestServer()
+    const a = device(server)
+    const ids: string[] = []
+    for (let i = 0; i < 150; i++) {
+      const id = await a.repo.createNote()
+      await a.repo.setNoteText(id, `Note ${i}`, `body ${i}`)
+      ids.push(id)
+    }
+    await a.engine.syncNow()
+
+    const b = device(server)
+    await b.engine.syncNow()
+    b.state.online = false
+    // On B, while offline: edit one note, permanently delete another, leave the rest alone.
+    await b.repo.setNoteText(ids[10], 'Edited on B', 'b text')
+    await b.repo.trashNotes([ids[20]])
+    await b.repo.deleteForever([{ entity: 'note', id: ids[20] }])
+
+    // On A, meanwhile: change all of them (pin), so B has lots to pull.
+    await a.repo.setPinned(ids.map((id) => ({ entity: 'note' as const, id })), true)
+    await a.engine.syncNow()
+
+    b.state.online = true
+    await b.engine.syncNow()
+    const notes = new Map((await b.db.notes.toArray()).map((n) => [n.id, n]))
+    expect(notes.get(ids[10])).toMatchObject({ title: 'Edited on B', pinned: true }) // B's text plus A's pin
+    expect(notes.has(ids[20])).toBe(false) // B's own deletion was not undone by A's update
+    expect(notes.get(ids[30])?.pinned).toBe(true) // everything else took A's change
+    expect(notes.size).toBe(149)
+  })
+
+  it('tells the person when the server refuses a change, and carries on with the rest', async () => {
+    const server = new TestServer()
+    const a = device(server)
+    const bad = await a.repo.createNote()
+    await a.repo.setNoteText(bad, 'x'.repeat(1500), 'too long a title') // the server allows 1,000 characters
+    const good = await a.repo.createNote()
+    await a.repo.setNoteText(good, 'Fine', 'ok')
+
+    await a.engine.syncNow()
+    expect(a.engine.getSnapshot().refused).toBe(1)
+    expect(await a.db.outbox.count()).toBe(0) // not retried forever
+    expect(await a.db.notes.get(bad)).toBeDefined() // still on this device
+    expect((await server.store.get('note', good))?.title).toBe('Fine') // the rest went through
+    expect(await server.store.get('note', bad)).toBeNull()
+  })
+
   it('spreads a permanent delete to the other device', async () => {
     const server = new TestServer()
     const a = device(server)

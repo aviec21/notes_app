@@ -1,9 +1,19 @@
 import { useAuth } from './auth'
+import { AppFailed, ErrorBoundary } from './components/ErrorBoundary'
 import LoginScreen from './components/LoginScreen'
 import NotesApp from './components/NotesApp'
 import { DialogProvider } from './components/ui/Dialogs'
 
 export default function App() {
+  // A safety net around everything: an unexpected error shows a message, not a blank page.
+  return (
+    <ErrorBoundary fallback={() => <AppFailed />}>
+      <Screens />
+    </ErrorBoundary>
+  )
+}
+
+function Screens() {
   const { state, signOut, refresh } = useAuth()
 
   if (state.status === 'loading') {

@@ -105,6 +105,7 @@ function Fields({
         const imageId = await storeImage(note.id, blob, mime)
         editor?.chain().focus().insertContent({ type: 'noteImage', attrs: { imageId, alt: file.name, width: 100 } }).run()
       } catch (err) {
+        console.error('Could not add picture:', err instanceof Error ? `${err.name}: ${err.message}` : String(err))
         const tooBig = err instanceof Error && err.message === 'too-large'
         setImageError(
           tooBig

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BIN_RETENTION_DAYS } from '../../shared/sync'
 import type { ItemRef } from '../db/repo'
 import { useHotkeys } from '../hotkeys'
@@ -35,6 +35,37 @@ interface Props {
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+/** How many cards a section shows before loading more. */
+const PAGE_SIZE = 60
+
+/**
+ * The end of a long list. Loads the next page when scrolled near (and offers a button, for
+ * keyboards and browsers without scroll observation).
+ */
+function LoadMore({ remaining, onMore }: { remaining: number; onMore: () => void }) {
+  const ref = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && onMore(), {
+      rootMargin: '800px',
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [remaining, onMore])
+  return (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onMore}
+      className="self-center rounded-lg px-4 py-2 text-sm"
+      style={{ border: '1px solid var(--border)' }}
+    >
+      Show {Math.min(PAGE_SIZE, remaining)} more ({remaining} left)
+    </button>
+  )
+}
 
 function ToolButton({
   onClick,
@@ -104,6 +135,17 @@ export default function Library({
   const tag = view.kind === 'tag' ? data.tags.find((t) => t.id === view.id) : undefined
 
   const sections = useMemo(() => sectionsFor(view, query, data), [view, query, data])
+
+  // Long lists are shown a page at a time (more load as you scroll), so thousands of notes
+  // never mean thousands of cards on the page at once. Changing view or search starts over.
+  const pageKey = `${view.kind}:${'id' in view ? view.id : ''}:${query.trim()}`
+  const [paging, setPaging] = useState<{ key: string; limits: Record<string, number> }>({ key: pageKey, limits: {} })
+  const limitFor = (sectionId: string) => (paging.key === pageKey ? (paging.limits[sectionId] ?? PAGE_SIZE) : PAGE_SIZE)
+  const showMore = (sectionId: string) =>
+    setPaging((current) => {
+      const base = current.key === pageKey ? current.limits : {}
+      return { key: pageKey, limits: { ...base, [sectionId]: (base[sectionId] ?? PAGE_SIZE) + PAGE_SIZE } }
+    })
   const visibleKeys = useMemo(() => new Set(sections.flatMap((s) => s.items.map((i) => i.key))), [sections])
   // Only items that are still on screen count as selected (a search may hide some).
   const selectedKeys = useMemo(() => [...selection].filter((k) => visibleKeys.has(k)), [selection, visibleKeys])
@@ -602,7 +644,7 @@ export default function Library({
               </h2>
             )}
             <div className={container}>
-              {section.items.map((item) => (
+              {section.items.slice(0, limitFor(section.id)).map((item) => (
                 <ItemCard
                   key={item.key}
                   item={item}
@@ -619,6 +661,9 @@ export default function Library({
                 />
               ))}
             </div>
+            {section.items.length > limitFor(section.id) && (
+              <LoadMore remaining={section.items.length - limitFor(section.id)} onMore={() => showMore(section.id)} />
+            )}
           </section>
         ))
       )}

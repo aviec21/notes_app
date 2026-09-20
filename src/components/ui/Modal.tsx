@@ -54,6 +54,6 @@ export function Modal({
 export const buttonStyles = {
   base: 'rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-60',
   primary: { background: 'var(--accent)', color: 'var(--bg)' },
-  danger: { background: 'var(--danger)', color: '#fff' },
+  danger: { background: 'var(--danger)', color: 'var(--on-danger)' },
   plain: { border: '1px solid var(--border)' },
 }

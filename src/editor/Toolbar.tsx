@@ -387,7 +387,8 @@ export default function Toolbar({
 
       {panel && (
         <div
-          role="menu"
+          // A group of choices, not a "menu": its contents are ordinary buttons and swatches.
+          role="group"
           aria-label="Formatting options"
           className={`absolute left-1 z-30 max-h-72 w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-xl p-3 shadow-xl ${placement === 'top' ? 'top-full mt-1' : 'bottom-full mb-1'}`}
           style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}

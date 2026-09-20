@@ -10,7 +10,10 @@
   --muted: #6b6b78;
   --border: #e3e3ea;
   --accent: #4f46e5;
+  /* Red for destructive actions, and the text colour that sits on a red-filled button.
+     Both pairs meet 4.5:1 (checked against the page and card backgrounds). */
   --danger: #c62828;
+  --on-danger: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,7 +25,8 @@
     --muted: #9a9aa8;
     --border: #2c2c35;
     --accent: #8b85ff;
-    --danger: #d64545;
+    --danger: #ff7b7b;
+    --on-danger: #121216;
   }
 }
 
@@ -34,7 +38,8 @@
   --muted: #9a9aa8;
   --border: #2c2c35;
   --accent: #8b85ff;
-  --danger: #d64545;
+  --danger: #ff7b7b;
+  --on-danger: #121216;
 }
 
 /* Rich-text note body. The reset strips list and heading styles, so they are restored here.

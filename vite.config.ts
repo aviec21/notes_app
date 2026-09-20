@@ -1,10 +1,19 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// The security headers live in vercel.json (what production sends). The local preview server
+// used for testing sends the very same ones, so tests run under the real policy.
+const vercel = JSON.parse(readFileSync(new URL('./vercel.json', import.meta.url), 'utf8')) as {
+  headers?: { headers: { key: string; value: string }[] }[]
+}
+const securityHeaders = Object.fromEntries((vercel.headers ?? []).flatMap((rule) => rule.headers.map((h) => [h.key, h.value])))
+
 // https://vite.dev/config/
 export default defineConfig({
+  preview: { headers: securityHeaders },
   plugins: [
     react(),
     tailwindcss(),

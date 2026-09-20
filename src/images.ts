@@ -1,3 +1,4 @@
+import type { ImageRow } from './db/db'
 import { db } from './sync/runtime'
 
 export const MAX_IMAGE_BYTES = 3_000_000
@@ -29,10 +30,30 @@ export async function compressImage(file: File | Blob): Promise<{ blob: Blob; mi
   return { blob, mime: blob.type || 'image/webp' }
 }
 
+/** A picture's bytes (older Safari has no Blob.arrayBuffer). */
+export async function bytesOf(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as ArrayBuffer)
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read picture'))
+    reader.readAsArrayBuffer(blob)
+  })
+}
+
+/** The picture in a stored row as a Blob, whichever way it was saved. */
+export function imageBlobOf(row: ImageRow): Blob {
+  if (row.data) return new Blob([row.data], { type: row.mime })
+  if (row.blob) return row.blob
+  throw new Error('Stored picture has no data')
+}
+
 /** Saves a picture on this device and queues it for upload. Returns its id. */
 export async function storeImage(noteId: string, blob: Blob, mime: string): Promise<string> {
   const id = crypto.randomUUID()
-  await db.images.put({ id, noteId, blob, mime, size: blob.size, uploaded: 0, createdAt: Date.now() })
+  // Stored as plain bytes: Safari can fail to store a Blob in the on-device database.
+  const data = await bytesOf(blob)
+  await db.images.put({ id, noteId, data, mime, size: data.byteLength, uploaded: 0, createdAt: Date.now() })
   return id
 }
 
@@ -59,7 +80,7 @@ export async function imageUrl(id: string): Promise<string | null> {
   if (cached) return cached
 
   const local = await db.images.get(id)
-  if (local) return toUrl(id, local.blob)
+  if (local) return toUrl(id, imageBlobOf(local))
 
   let pending = fetching.get(id)
   if (!pending) {
@@ -69,7 +90,8 @@ export async function imageUrl(id: string): Promise<string | null> {
         if (!res.ok) return null
         const blob = await res.blob()
         // Keep it for offline use; it is already on the server, so it needs no upload.
-        await db.images.put({ id, noteId: '', blob, mime: blob.type, size: blob.size, uploaded: 1, createdAt: Date.now() })
+        const data = await bytesOf(blob)
+        await db.images.put({ id, noteId: '', data, mime: blob.type, size: data.byteLength, uploaded: 1, createdAt: Date.now() })
         return toUrl(id, blob)
       } catch {
         return null // offline: the placeholder stays until the connection is back
@@ -110,7 +132,7 @@ export async function uploadPendingImages(): Promise<void> {
       method: 'PUT',
       credentials: 'same-origin',
       headers: { 'Content-Type': image.mime },
-      body: image.blob,
+      body: imageBlobOf(image),
     })
     // 413 means the server refused the size: keep the local copy, but stop retrying forever.
     if (res.ok || res.status === 413) await db.images.update(image.id, { uploaded: res.ok ? 1 : 2 })

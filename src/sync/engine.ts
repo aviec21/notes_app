@@ -17,6 +17,8 @@ export type SyncState = 'idle' | 'syncing' | 'offline' | 'error'
 export interface SyncSnapshot {
   state: SyncState
   lastSyncedAt: number | null
+  /** Changes the server refused (this session). They stay on this device but are not synced. */
+  refused: number
 }
 
 interface EngineOptions {
@@ -34,7 +36,7 @@ const STARTUP_OVERLAP = 200
 
 /** Sends queued local changes to the server and applies what changed elsewhere. */
 export class SyncEngine {
-  private snapshot: SyncSnapshot = { state: 'idle', lastSyncedAt: null }
+  private snapshot: SyncSnapshot = { state: 'idle', lastSyncedAt: null, refused: 0 }
   private listeners = new Set<() => void>()
   private running: Promise<void> | null = null
   private again = false
@@ -161,9 +163,13 @@ export class SyncEngine {
   private async handleResult(op: OutboxOp, result: OpResult) {
     if (result.status === 'applied') return this.onApplied(op, result.rev, result.record)
     if (result.status === 'conflict') return this.onConflict(op, result.record)
+    // The server will never accept this change as it is (for example, a value that is too
+    // large), so retrying would loop forever. It is dropped from the queue, but the copy on
+    // this device is kept, and the person is told rather than left thinking it synced.
     console.error('Server rejected a change and it was dropped:', op.entity, result.reason)
     await this.db.setMeta('lastRejected', { opId: op.opId, reason: result.reason, at: Date.now() })
     await this.db.outbox.delete(op.seq!)
+    this.setSnapshot({ refused: this.snapshot.refused + 1 })
   }
 
   private async onApplied(op: OutboxOp, rev: number, merged?: ServerRecord) {
@@ -255,33 +261,64 @@ export class SyncEngine {
     this.firstCycle = false
   }
 
+  // A page is applied with a few bulk database operations rather than several per record:
+  // some browsers' on-device databases are much slower per operation, and a first sync of a
+  // large library would otherwise take minutes there.
   private async applyPage(page: PullResponse) {
     const tables = [this.db.notes, this.db.folders, this.db.tags, this.db.outbox]
     await this.db.transaction('rw', tables, async () => {
-      for (const { entity, record } of page.records) await this.applyServerRecord(entity, record)
-      for (const { entity, id } of page.purged) await this.applyTombstone(entity, id)
+      const upserts = new Map<EntityName, ServerRecord[]>()
+      for (const { entity, record } of page.records) upserts.set(entity, [...(upserts.get(entity) ?? []), record])
+      for (const [entity, records] of upserts) await this.applyServerRecords(entity, records)
+
+      const removals = new Map<EntityName, string[]>()
+      for (const { entity, id } of page.purged) removals.set(entity, [...(removals.get(entity) ?? []), id])
+      for (const [entity, ids] of removals) await this.applyTombstones(entity, ids)
     })
   }
 
-  private async applyServerRecord(entity: EntityName, server: ServerRecord) {
-    const records = this.db.recordTable(entity)
-    const local = await records.get(server.id)
-    if (local && local.rev >= server.rev) return // already have this (or newer)
-
-    const pending = await this.db.outbox.where('[entity+id]').equals([entity, server.id]).sortBy('seq')
-    if (pending.some((op) => op.kind === 'purge')) return // being deleted here; leave it
-
-    // Unsent local changes stay on top of the server's version until they are sent.
-    let merged: Record<string, unknown> = { ...server }
-    for (const op of pending) if (op.kind === 'upsert') merged = { ...merged, ...op.fields }
-    await records.put(merged as unknown as LocalRecord)
+  /** Waiting local changes for some records, oldest first, grouped by record id. */
+  private async pendingFor(entity: EntityName, ids: string[]): Promise<Map<string, OutboxOp[]>> {
+    const ops = await this.db.outbox
+      .where('[entity+id]')
+      .anyOf(ids.map((id) => [entity, id]))
+      .toArray()
+    const byId = new Map<string, OutboxOp[]>()
+    for (const op of ops.sort((a, b) => a.seq! - b.seq!)) byId.set(op.id, [...(byId.get(op.id) ?? []), op])
+    return byId
   }
 
-  private async applyTombstone(entity: EntityName, id: string) {
-    const pending = await this.db.outbox.where('[entity+id]').equals([entity, id]).toArray()
+  private async applyServerRecords(entity: EntityName, servers: ServerRecord[]) {
+    if (servers.length === 0) return
+    const records = this.db.recordTable(entity)
+    const locals = await records.bulkGet(servers.map((s) => s.id))
+    const pending = await this.pendingFor(entity, servers.map((s) => s.id))
+
+    const toWrite: LocalRecord[] = []
+    servers.forEach((server, index) => {
+      const local = locals[index]
+      if (local && local.rev >= server.rev) return // already have this (or newer)
+      const waiting = pending.get(server.id) ?? []
+      if (waiting.some((op) => op.kind === 'purge')) return // being deleted here; leave it
+
+      // Unsent local changes stay on top of the server's version until they are sent.
+      let merged: Record<string, unknown> = { ...server }
+      for (const op of waiting) if (op.kind === 'upsert') merged = { ...merged, ...op.fields }
+      toWrite.push(merged as unknown as LocalRecord)
+    })
+    if (toWrite.length > 0) await records.bulkPut(toWrite)
+  }
+
+  private applyServerRecord(entity: EntityName, server: ServerRecord) {
+    return this.applyServerRecords(entity, [server])
+  }
+
+  private async applyTombstones(entity: EntityName, ids: string[]) {
+    if (ids.length === 0) return
+    const pending = await this.pendingFor(entity, ids)
     // Unsent edits win over a deletion elsewhere: they will recreate the record.
-    if (pending.some((op) => op.kind === 'upsert')) return
-    await this.db.recordTable(entity).delete(id)
+    const removable = ids.filter((id) => !(pending.get(id) ?? []).some((op) => op.kind === 'upsert'))
+    if (removable.length > 0) await this.db.recordTable(entity).bulkDelete(removable)
   }
 }
 

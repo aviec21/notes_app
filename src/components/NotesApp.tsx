@@ -4,6 +4,7 @@ import { useHotkeys } from '../hotkeys'
 import type { View } from '../lib/library'
 import { useSidebarWidth } from '../sidebarWidth'
 import { startSync } from '../sync/runtime'
+import { EditorFailed, ErrorBoundary } from './ErrorBoundary'
 import HowToUse from './HowToUse'
 import Library, { type ViewMode } from './Library'
 import MobileNav from './MobileNav'
@@ -117,9 +118,11 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
         </main>
       ) : openId && !split ? (
         <main className="min-w-0 flex-1 px-4 md:px-6">
-          <Suspense fallback={editorLoading}>
-            <NoteEditor key={openId} id={openId} onClose={closeEditor} onOpenTag={openTag} />
-          </Suspense>
+          <ErrorBoundary fallback={() => <EditorFailed onBack={closeEditor} />}>
+            <Suspense fallback={editorLoading}>
+              <NoteEditor key={openId} id={openId} onClose={closeEditor} onOpenTag={openTag} />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       ) : (
         <>
@@ -162,9 +165,11 @@ export default function NotesApp({ defaultPin, onSignOut, onPinChanged, onUnauth
               className="h-screen min-w-0 flex-1 overflow-y-auto px-6"
               style={{ borderLeft: '1px solid var(--border)' }}
             >
-              <Suspense fallback={editorLoading}>
-                <NoteEditor key={openId} id={openId} onClose={closeEditor} embedded onOpenTag={openTag} />
-              </Suspense>
+              <ErrorBoundary fallback={() => <EditorFailed onBack={closeEditor} />}>
+                <Suspense fallback={editorLoading}>
+                  <NoteEditor key={openId} id={openId} onClose={closeEditor} embedded onOpenTag={openTag} />
+                </Suspense>
+              </ErrorBoundary>
             </section>
           )}
         </>

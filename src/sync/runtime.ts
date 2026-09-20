@@ -1,5 +1,6 @@
 import { NotesDB } from '../db/db'
 import { uploadPendingImages } from '../images'
+import { requestPersistence } from '../storage'
 import { Repo } from '../db/repo'
 import { SyncEngine } from './engine'
 import { httpTransport } from './transport'
@@ -22,6 +23,9 @@ const EVERY_MS = 60_000
 export function startSync(onUnauthorized: () => void): () => void {
   engine.setUnauthorizedHandler(onUnauthorized)
   const run = () => void engine.syncNow()
+
+  // Ask the browser not to clear this device's stored notes (it may say no, quietly).
+  void requestPersistence()
 
   // Clear anything whose 30 days in the recycle bin are up, then sync those deletions.
   void repo

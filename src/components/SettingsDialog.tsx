@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePendingCount } from '../hooks'
+import { storageInfo, type StorageInfo } from '../storage'
 import { downloadBlob, exportAllNotes } from '../lib/export'
 import { useTheme, type Theme } from '../theme'
 import ChangePin from './ChangePin'
@@ -11,6 +12,41 @@ const THEMES: { value: Theme; label: string }[] = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ]
+
+/** How safe the notes kept on this device are from being cleared by the browser. */
+function StorageSection() {
+  const [info, setInfo] = useState<StorageInfo | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void storageInfo().then((found) => !cancelled && setInfo(found))
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  if (!info || (info.persisted === null && info.usedMB === null)) return null
+
+  return (
+    <section className="flex flex-col gap-1">
+      <h3 className="text-sm font-medium">Storage on this device</h3>
+      {info.persisted === true && (
+        <p className="text-sm" style={{ color: 'var(--muted)' }}>
+          Protected: your browser will not clear the notes kept on this device.
+        </p>
+      )}
+      {info.persisted === false && (
+        <p className="text-sm" style={{ color: 'var(--muted)' }}>
+          Your browser may clear stored data if the device runs low on space. Notes that have synced are safe on the
+          server; keep the app online now and then so recent ones are too.
+        </p>
+      )}
+      {info.usedMB !== null && (
+        <p className="text-xs" style={{ color: 'var(--muted)' }}>
+          Using {info.usedMB} MB{info.quotaMB ? ` of about ${info.quotaMB} MB available` : ''}.
+        </p>
+      )}
+    </section>
+  )
+}
 
 /** Downloads every note as Markdown files in a .zip, with the pictures they use. */
 function ExportSection() {
@@ -115,6 +151,8 @@ export default function SettingsDialog({
         </section>
 
         <ExportSection />
+
+        <StorageSection />
 
         <ChangePin onChanged={onPinChanged} />
 

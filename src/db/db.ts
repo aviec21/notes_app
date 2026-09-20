@@ -22,11 +22,17 @@ export interface MetaRow {
 export interface ImageRow {
   id: string
   noteId: string
-  blob: Blob
   mime: string
   size: number
   uploaded: 0 | 1 | 2
   createdAt: number
+  /**
+   * The picture's bytes. Kept as plain bytes rather than a Blob because some browsers
+   * (Safari especially) fail to store Blobs in the on-device database.
+   */
+  data?: ArrayBuffer
+  /** Pictures saved by earlier versions kept a Blob instead; they are still readable. */
+  blob?: Blob
 }
 
 export class NotesDB extends Dexie {
