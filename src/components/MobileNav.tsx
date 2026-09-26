@@ -83,7 +83,7 @@ export default function MobileNav({
     <header className="flex flex-col gap-3 pt-3 pb-1">
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-col">
-          <span className="text-xl font-semibold">Notes</span>
+          <span className="text-xl font-semibold">Memos</span>
           <SyncStatus />
         </div>
         <div ref={menuRef} className="relative">

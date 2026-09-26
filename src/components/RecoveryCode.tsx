@@ -20,11 +20,11 @@ export function CodeDisplay({ code, onDone, doneLabel = 'Done' }: { code: string
 
   function download() {
     const text =
-      `Notes app: recovery code\n\n${code}\n\n` +
+      `Memos app: recovery code\n\n${code}\n\n` +
       'Keep this somewhere safe (a password manager is ideal). Anyone who has it can reset your PIN.\n' +
       'To use it: on the sign-in screen choose "Forgot your PIN?" and enter this code.\n' +
       `Created ${new Date().toLocaleString()}\n`
-    downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), 'notes-recovery-code.txt')
+    downloadBlob(new Blob([text], { type: 'text/plain;charset=utf-8' }), 'memos-recovery-code.txt')
   }
 
   return (

@@ -8,6 +8,15 @@ git checkout v1.0.0        # look at an older version
 git log v1.0.0..v1.1.0     # the commits between two versions
 ```
 
+## v1.1.1 — 2026-09-27 · Renamed to Memos
+
+The app is now called **Memos**: the name under the icon on a phone's home screen
+(`vite.config.ts`, `index.html`), the browser tab, the headers, the sign-in screen and the
+recovery-code file (`memos-recovery-code.txt`). Lists still say "Notes" (they list notes), and
+the internal on-device database keeps its old name, `notes-app`, on purpose: renaming it would
+make the app open with no notes. An already-installed phone app may show the old name until it
+refreshes (Android) or is re-added (iPhone).
+
 ## v1.1.0 — 2026-09-27 · Usability pass
 
 Commit `d036b12` (plus this changelog). It bundles many small improvements; this list says

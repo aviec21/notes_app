@@ -21,9 +21,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Notes',
-        short_name: 'Notes',
-        description: 'Personal notes that work offline and sync everywhere.',
+        name: 'Memos',
+        short_name: 'Memos',
+        description: 'Personal memos that work offline and sync everywhere.',
         start_url: '/',
         scope: '/',
         display: 'standalone',

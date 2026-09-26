@@ -67,7 +67,7 @@ export default function LoginScreen({ onSignedIn }: { onSignedIn: () => void }) 
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-5 px-4 py-10">
-      <h1 className="text-3xl font-semibold">Notes</h1>
+      <h1 className="text-3xl font-semibold">Memos</h1>
 
       {mode === 'pin' && (
         <>

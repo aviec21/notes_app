@@ -257,7 +257,7 @@ export default function Sidebar({
     <nav aria-label="Library" className="flex h-full flex-col gap-3 p-3">
       <div className="flex flex-col gap-0.5 px-1 pt-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-lg font-semibold">Notes</span>
+          <span className="text-lg font-semibold">Memos</span>
           <button
             type="button"
             onClick={onCollapse}

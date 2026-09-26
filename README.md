@@ -1,6 +1,6 @@
-# Notes
+# Memos
 
-A personal notes PWA: offline-first, syncs across devices, installable from Chrome.
+A personal notes PWA (shown as "Memos" on your devices): offline-first, syncs across devices, installable from Chrome.
 
 **Stack:** React + TypeScript + Vite + Tailwind (PWA) · Vercel Functions (`/api`) · Neon Postgres · PIN sign-in.
 
