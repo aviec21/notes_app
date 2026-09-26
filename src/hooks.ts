@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import type { LibraryData } from './lib/library'
+import { usePref } from './prefs'
 import { db, engine } from './sync/runtime'
 
 export function useOnline() {
@@ -50,30 +51,4 @@ export function useIsDesktop(): boolean {
 }
 
 /** A choice that is remembered on this device (like list vs grid). */
-export function usePersistentChoice<T extends string>(
-  key: string,
-  initial: T,
-  allowed: readonly T[],
-): [T, (value: T) => void] {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const stored = localStorage.getItem(key) as T | null
-      if (stored && allowed.includes(stored)) return stored
-    } catch {
-      // Storage unavailable: use the default.
-    }
-    return initial
-  })
-  const set = useCallback(
-    (next: T) => {
-      setValue(next)
-      try {
-        localStorage.setItem(key, next)
-      } catch {
-        // The choice still applies for this session.
-      }
-    },
-    [key],
-  )
-  return [value, set]
-}
+export const usePersistentChoice = usePref

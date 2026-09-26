@@ -1,22 +1,25 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
+import { folderColorVar } from '../lib/folderColors'
 import type { LibraryData, View } from '../lib/library'
 import SearchBox from './SearchBox'
 import SyncStatus from './SyncStatus'
 import { HelpIcon, KeyboardIcon, MenuIcon, SettingsIcon } from './ui/Icons'
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) {
+function Chip({ active, onClick, children, dot }: { active: boolean; onClick: () => void; children: string; dot?: string }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="shrink-0 rounded-full px-3 py-1.5 text-sm"
+      className="flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm"
       style={
         active
           ? { background: 'var(--accent)', color: 'var(--bg)', border: '1px solid var(--accent)' }
           : { border: '1px solid var(--border)' }
       }
     >
+      {/* A tag's colour, as a dot (the text keeps its normal colour so it stays easy to read). */}
+      {dot && <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ background: dot, boxShadow: '0 0 0 1.5px var(--bg)' }} />}
       {children}
     </button>
   )
@@ -115,7 +118,7 @@ export default function MobileNav({
           Notes
         </Chip>
         {tags.map((tag) => (
-          <Chip key={tag.id} active={at('tag', tag.id)} onClick={() => onNavigate({ kind: 'tag', id: tag.id })}>
+          <Chip key={tag.id} active={at('tag', tag.id)} dot={folderColorVar(tag.color)} onClick={() => onNavigate({ kind: 'tag', id: tag.id })}>
             {`#${tag.name}`}
           </Chip>
         ))}

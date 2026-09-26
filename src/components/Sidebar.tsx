@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode, type Ref } from 'react'
+import { useId, useMemo, type ReactNode, type Ref } from 'react'
 import {
   binItems,
   effectiveFolderId,
@@ -9,11 +9,26 @@ import {
   type View,
 } from '../lib/library'
 import { folderColorVar } from '../lib/folderColors'
+import { usePref } from '../prefs'
 import { repo } from '../sync/runtime'
 import SearchBox from './SearchBox'
 import SyncStatus from './SyncStatus'
 import { useDialogs } from './ui/Dialogs'
-import { FolderIcon, HelpIcon, KeyboardIcon, NoteIcon, PinIcon, PlusIcon, SettingsIcon, TagIcon, TrashIcon } from './ui/Icons'
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  FolderIcon,
+  HelpIcon,
+  KeyboardIcon,
+  NoteIcon,
+  PinIcon,
+  PlusIcon,
+  SearchIcon,
+  SettingsIcon,
+  SidebarIcon,
+  TagIcon,
+  TrashIcon,
+} from './ui/Icons'
 
 function NavItem({
   active,
@@ -61,13 +76,80 @@ function NavItem({
   )
 }
 
-const heading = 'px-3 pt-4 pb-1 text-xs font-semibold tracking-wide uppercase'
+/** A heading that folds its list away. The arrow points down while the list is showing. */
+function SectionHeading({
+  label,
+  open,
+  count,
+  onToggle,
+  controls,
+  trailing,
+}: {
+  label: string
+  open: boolean
+  count: number
+  onToggle: () => void
+  controls: string
+  trailing?: ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between pr-1">
+      <h2 className="min-w-0 flex-1 text-xs font-semibold tracking-wide uppercase" style={{ color: 'var(--muted)' }}>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls={controls}
+          title={open ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+          className="flex w-full items-center gap-1 rounded px-2 pt-4 pb-1 text-left uppercase"
+        >
+          {open ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
+          {label}
+          {!open && <span className="font-normal normal-case">({count})</span>}
+        </button>
+      </h2>
+      {trailing}
+    </div>
+  )
+}
+
+/** A round icon button on the collapsed sidebar's strip. */
+function RailButton({
+  label,
+  onClick,
+  active,
+  children,
+}: {
+  label: string
+  onClick: () => void
+  active?: boolean
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-current={active ? 'page' : undefined}
+      title={label}
+      className="flex h-10 w-10 items-center justify-center rounded-lg"
+      style={active ? { background: 'var(--surface)', boxShadow: 'inset 3px 0 0 var(--accent)' } : undefined}
+    >
+      {children}
+    </button>
+  )
+}
 
 interface Props {
   data: LibraryData
   view: View
   query: string
   searchRef: Ref<HTMLInputElement>
+  /** Collapsed: only a strip of icons is shown. */
+  collapsed: boolean
+  /** Opens the sidebar again (and, with `focusSearch`, puts the cursor in the search box). */
+  onExpand: (focusSearch?: boolean) => void
+  onCollapse: () => void
   onNavigate: (view: View) => void
   onQuery: (query: string) => void
   onOpenSettings: () => void
@@ -76,9 +158,29 @@ interface Props {
 }
 
 /** Desktop side panel: search, folders, tags and the recycle bin. Scrolls on its own. */
-export default function Sidebar({ data, view, query, searchRef, onNavigate, onQuery, onOpenSettings, onOpenShortcuts, onOpenGuide }: Props) {
+export default function Sidebar({
+  data,
+  view,
+  query,
+  searchRef,
+  collapsed,
+  onExpand,
+  onCollapse,
+  onNavigate,
+  onQuery,
+  onOpenSettings,
+  onOpenShortcuts,
+  onOpenGuide,
+}: Props) {
   const dialogs = useDialogs()
   const searching = query.trim().length > 0
+  const foldersId = useId()
+  const tagsId = useId()
+  // Whether the Folders and Tags lists are showing is remembered on this device.
+  const [foldersState, setFoldersState] = usePref('notes.sidebar.folders', 'open', ['open', 'closed'])
+  const [tagsState, setTagsState] = usePref('notes.sidebar.tags', 'open', ['open', 'closed'])
+  const foldersOpen = foldersState === 'open'
+  const tagsOpen = tagsState === 'open'
 
   const { folders, tags, folderCounts, tagCounts, looseCount, binCount } = useMemo(() => {
     const live = liveFolders(data)
@@ -121,10 +223,51 @@ export default function Sidebar({ data, view, query, searchRef, onNavigate, onQu
 
   const smallButton = 'rounded p-1.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus:opacity-100'
 
+  if (collapsed) {
+    return (
+      <nav aria-label="Library" className="flex h-full flex-col items-center gap-1 py-3">
+        <RailButton label="Expand sidebar" onClick={() => onExpand()}>
+          <SidebarIcon />
+        </RailButton>
+        <RailButton label="Search notes" onClick={() => onExpand(true)} active={searching}>
+          <SearchIcon />
+        </RailButton>
+        <RailButton label="Notes" onClick={() => onNavigate({ kind: 'root' })} active={isView('root')}>
+          <NoteIcon />
+        </RailButton>
+        <RailButton label="Folders" onClick={() => onExpand()} active={isView('folder')}>
+          <FolderIcon />
+        </RailButton>
+        <RailButton label="Tags" onClick={() => onExpand()} active={isView('tag')}>
+          <TagIcon />
+        </RailButton>
+        <div className="flex-1" />
+        <RailButton label="Recycle bin" onClick={() => onNavigate({ kind: 'bin' })} active={isView('bin')}>
+          <TrashIcon />
+        </RailButton>
+        <RailButton label="Settings" onClick={onOpenSettings}>
+          <SettingsIcon />
+        </RailButton>
+        <SyncStatus compact />
+      </nav>
+    )
+  }
+
   return (
     <nav aria-label="Library" className="flex h-full flex-col gap-3 p-3">
-      <div className="flex items-center justify-between gap-2 px-1 pt-1">
-        <span className="text-lg font-semibold">Notes</span>
+      <div className="flex flex-col gap-0.5 px-1 pt-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-lg font-semibold">Notes</span>
+          <button
+            type="button"
+            onClick={onCollapse}
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+            className="rounded-lg p-1.5"
+          >
+            <SidebarIcon />
+          </button>
+        </div>
         <SyncStatus />
       </div>
       <SearchBox value={query} onChange={onQuery} inputRef={searchRef} showHint />
@@ -138,59 +281,71 @@ export default function Sidebar({ data, view, query, searchRef, onNavigate, onQu
           count={looseCount}
         />
 
-        <div className="flex items-center justify-between pr-1">
-          <h2 className={heading} style={{ color: 'var(--muted)' }}>
-            Folders
-          </h2>
-          <button type="button" onClick={() => void newFolder()} aria-label="New folder" title="New folder (Shift+N)" className="rounded p-1.5">
-            <PlusIcon />
-          </button>
+        <SectionHeading
+          label="Folders"
+          open={foldersOpen}
+          count={folders.length}
+          controls={foldersId}
+          onToggle={() => setFoldersState(foldersOpen ? 'closed' : 'open')}
+          trailing={
+            <button type="button" onClick={() => void newFolder()} aria-label="New folder" title="New folder (Shift+N)" className="rounded p-1.5">
+              <PlusIcon />
+            </button>
+          }
+        />
+        <div id={foldersId} hidden={!foldersOpen}>
+          {folders.length === 0 && (
+            <p className="px-3 py-1 text-xs" style={{ color: 'var(--muted)' }}>
+              No folders yet
+            </p>
+          )}
+          {folders.map((folder) => (
+            <NavItem
+              key={folder.id}
+              active={isView('folder', folder.id)}
+              onClick={() => onNavigate({ kind: 'folder', id: folder.id })}
+              icon={<FolderIcon color={folderColorVar(folder.color)} />}
+              label={folder.name}
+              count={folderCounts.get(folder.id) ?? 0}
+              pinned={folder.pinned}
+            />
+          ))}
         </div>
-        {folders.length === 0 && (
-          <p className="px-3 py-1 text-xs" style={{ color: 'var(--muted)' }}>
-            No folders yet
-          </p>
-        )}
-        {folders.map((folder) => (
-          <NavItem
-            key={folder.id}
-            active={isView('folder', folder.id)}
-            onClick={() => onNavigate({ kind: 'folder', id: folder.id })}
-            icon={<FolderIcon color={folderColorVar(folder.color)} />}
-            label={folder.name}
-            count={folderCounts.get(folder.id) ?? 0}
-            pinned={folder.pinned}
-          />
-        ))}
 
-        <h2 className={heading} style={{ color: 'var(--muted)' }}>
-          Tags
-        </h2>
-        {tags.length === 0 && (
-          <p className="px-3 py-1 text-xs" style={{ color: 'var(--muted)' }}>
-            Tags you create appear here
-          </p>
-        )}
-        {tags.map((tag) => (
-          <NavItem
-            key={tag.id}
-            active={isView('tag', tag.id)}
-            onClick={() => onNavigate({ kind: 'tag', id: tag.id })}
-            icon={<TagIcon />}
-            label={tag.name}
-            count={tagCounts.get(tag.id) ?? 0}
-            actions={
-              <>
-                <button type="button" onClick={() => void renameTag(tag.id, tag.name)} aria-label={`Rename tag ${tag.name}`} title="Rename" className={`${smallButton} text-xs`}>
-                  Edit
-                </button>
-                <button type="button" onClick={() => void deleteTag(tag.id, tag.name)} aria-label={`Delete tag ${tag.name}`} title="Delete" className={`${smallButton} mr-1`} style={{ color: 'var(--danger)' }}>
-                  <TrashIcon />
-                </button>
-              </>
-            }
-          />
-        ))}
+        <SectionHeading
+          label="Tags"
+          open={tagsOpen}
+          count={tags.length}
+          controls={tagsId}
+          onToggle={() => setTagsState(tagsOpen ? 'closed' : 'open')}
+        />
+        <div id={tagsId} hidden={!tagsOpen}>
+          {tags.length === 0 && (
+            <p className="px-3 py-1 text-xs" style={{ color: 'var(--muted)' }}>
+              Tags you create appear here
+            </p>
+          )}
+          {tags.map((tag) => (
+            <NavItem
+              key={tag.id}
+              active={isView('tag', tag.id)}
+              onClick={() => onNavigate({ kind: 'tag', id: tag.id })}
+              icon={<TagIcon color={folderColorVar(tag.color)} />}
+              label={tag.name}
+              count={tagCounts.get(tag.id) ?? 0}
+              actions={
+                <>
+                  <button type="button" onClick={() => void renameTag(tag.id, tag.name)} aria-label={`Rename tag ${tag.name}`} title="Rename" className={`${smallButton} text-xs`}>
+                    Edit
+                  </button>
+                  <button type="button" onClick={() => void deleteTag(tag.id, tag.name)} aria-label={`Delete tag ${tag.name}`} title="Delete" className={`${smallButton} mr-1`} style={{ color: 'var(--danger)' }}>
+                    <TrashIcon />
+                  </button>
+                </>
+              }
+            />
+          ))}
+        </div>
       </div>
 
       <div className="flex flex-col gap-1 pt-2" style={{ borderTop: '1px solid var(--border)' }}>

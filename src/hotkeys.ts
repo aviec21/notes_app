@@ -64,6 +64,7 @@ export function useHotkeys(hotkeys: Hotkey[], enabled = true) {
 export const SHORTCUTS: { group: string; keys: string; description: string }[] = [
   { group: 'Anywhere', keys: '/  or  Ctrl+K', description: 'Search' },
   { group: 'Anywhere', keys: '?', description: 'Show this list' },
+  { group: 'Anywhere', keys: '[', description: 'Collapse / expand the sidebar' },
   { group: 'Notes list', keys: 'N', description: 'New note' },
   { group: 'Notes list', keys: 'Shift+N', description: 'New folder' },
   { group: 'Notes list', keys: 'G', description: 'Switch list / grid view' },
@@ -81,6 +82,7 @@ export const SHORTCUTS: { group: string; keys: string; description: string }[] =
   { group: 'Recycle bin', keys: 'R', description: 'Restore selected' },
   { group: 'Recycle bin', keys: 'Delete', description: 'Delete selected forever' },
   { group: 'Editing a note', keys: 'Ctrl+S', description: 'Save now' },
+  { group: 'Editing a note', keys: 'Ctrl+F', description: 'Find in this note (Enter / Shift+Enter: next / previous)' },
   { group: 'Editing a note', keys: 'Ctrl+Shift+C', description: 'Copy the whole note as Markdown' },
   { group: 'Editing a note', keys: 'Esc', description: 'Save and go back (or close the side panel)' },
   { group: 'Editing a note', keys: 'Ctrl+Z / Ctrl+Y', description: 'Undo / redo' },

@@ -252,6 +252,12 @@ export class Repo {
     return this.update('tag', id, { name: name.trim() })
   }
 
+  /** Sets a tag's colour by name (the same palette as folders), or clears it with null. */
+  async setTagColor(id: string, color: string | null) {
+    if (color !== null && !isFolderColor(color)) throw new Error(`Unknown tag colour: ${color}`)
+    return this.update('tag', id, { color })
+  }
+
   /** Deletes a tag for good and takes it off every note. (Tags do not go to the bin.) */
   async deleteTag(id: string): Promise<void> {
     const tagged = await this.db.notes.filter((n) => n.tagIds.includes(id)).toArray()

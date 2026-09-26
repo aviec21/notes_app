@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import type { FolderRecord, NoteRecord, TagRecord } from '../../shared/sync'
 import { FOLDER_COLORS, folderColorVar } from '../lib/folderColors'
 import { buttonStyles, Modal } from './ui/Modal'
-import { FolderIcon } from './ui/Icons'
+import { FolderIcon, TagIcon } from './ui/Icons'
 
 const row = 'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm'
 const rowStyle = { border: '1px solid var(--border)' }
@@ -42,20 +42,22 @@ export function MoveDialog({
   )
 }
 
-/** Choose a folder's colour (or none). Picking one applies it straight away. */
-export function FolderColorDialog({
+/** Choose a folder's or tag's colour (or none). Picking one applies it straight away. */
+export function ColorDialog({
   open,
-  folder,
+  kind,
+  item,
   onPick,
   onClose,
 }: {
   open: boolean
-  folder: FolderRecord | undefined
+  kind: 'folder' | 'tag'
+  item: { name: string; color: string | null } | undefined
   onPick: (color: string | null) => void
   onClose: () => void
 }) {
   const swatch = (color: string | null, label: string) => {
-    const selected = (folder?.color ?? null) === color
+    const selected = (item?.color ?? null) === color
     return (
       <button
         key={label}
@@ -80,9 +82,9 @@ export function FolderColorDialog({
     )
   }
   return (
-    <Modal open={open && !!folder} onClose={onClose} title={`Colour for “${folder?.name ?? ''}”`}>
+    <Modal open={open && !!item} onClose={onClose} title={`Colour for ${kind === 'tag' ? '#' : '“'}${item?.name ?? ''}${kind === 'tag' ? '' : '”'}`}>
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap gap-3" role="group" aria-label="Folder colour">
+        <div className="flex flex-wrap gap-3" role="group" aria-label={kind === 'tag' ? 'Tag colour' : 'Folder colour'}>
           {swatch(null, 'No colour')}
           {FOLDER_COLORS.map((c) => swatch(c.id, c.label))}
         </div>
@@ -148,6 +150,7 @@ export function TagsDialog({
                 className="h-4 w-4"
                 style={{ accentColor: 'var(--accent)' }}
               />
+              <TagIcon color={folderColorVar(tag.color)} />
               <span className="truncate">#{tag.name}</span>
             </label>
           )

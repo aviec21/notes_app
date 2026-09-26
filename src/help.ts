@@ -55,15 +55,29 @@ export const HELP_TOPICS: HelpTopic[] = [
     id: 'layout',
     section: 'Notes',
     title: 'List or grid view',
-    body: 'Use the list / grid switch in the toolbar (or press G). Your choice is remembered on this device.',
+    body: 'Use the list / grid switch in the toolbar (or press G). Your choice is remembered on this device. On a computer, the list is kept to about half the width so it is easy to scan; grid view uses the whole width.',
     keywords: 'cards tiles layout view mode',
+  },
+  {
+    id: 'card-size',
+    section: 'Notes',
+    title: 'Small, average or big cards',
+    body: 'Choose the card-size button in the toolbar (next to the list / grid switch) and pick Small, Average or Big. Small fits more on the screen; big shows more of each note. Every card stays the same size, and your choice is remembered on this device.',
+    keywords: 'size bigger smaller compact density zoom cards rows',
+  },
+  {
+    id: 'card-menu',
+    section: 'Notes',
+    title: 'The ⋯ menu on each note and folder',
+    body: 'Tap the three dots on any note or folder for its options: Open, Rename, Move to folder, Tags, Colour (folders), Pin, Copy as Markdown, Export and Delete. It works on just that one item, so you don’t need to select it first. In the recycle bin it offers Restore and Delete forever.',
+    keywords: 'three dots options menu more actions context',
   },
   {
     id: 'editor-mode',
     section: 'Notes',
     title: 'Editor mode (desktop)',
-    body: 'Turn on editor mode with the split-panel button in the toolbar (or press E). Clicking a note then opens it in a panel on the right while the list stays visible, so you can jump between notes quickly. Press Esc inside the note or use Close to hide the panel. Phones always open notes full screen.',
-    keywords: 'split panel side preview right pane',
+    body: 'Turn on editor mode with the split-panel button in the toolbar (or press E). Clicking a note then opens it in a panel on the right while the list stays visible, so you can jump between notes quickly. Press Esc inside the note or use Close to hide the panel; clicking the empty part of the list does the same (the note is saved first). Drag the thin line between the list and the note to make either wider; it is remembered. Phones always open notes full screen.',
+    keywords: 'split panel side preview right pane width divider close',
   },
 
   // --- Organising ---------------------------------------------------------------------
@@ -96,11 +110,18 @@ export const HELP_TOPICS: HelpTopic[] = [
     keywords: 'find look filter keyword highlight match',
   },
   {
+    id: 'find-in-note',
+    section: 'Organising',
+    title: 'Find inside a note',
+    body: 'Open a note from search results and the word you searched for is already highlighted in the text, with a find bar showing “1 of 3” and arrows to step to the next or previous match. In any note, choose the magnifier button in its header (or press Ctrl+F on desktop) to find words inside just that note; Enter goes to the next match, Shift+Enter to the previous, Esc closes the bar. The highlighting is only shown on screen — it is never saved into the note.',
+    keywords: 'find in page ctrl f highlight match search within note',
+  },
+  {
     id: 'folder-color',
     section: 'Organising',
-    title: 'Folder colours',
-    body: 'Open a folder and choose “Color” in the toolbar, then pick a colour (or “No colour”). The folder’s icon takes that colour in the list, the grid and the sidebar, on all your devices, and adjusts itself for the dark theme.',
-    keywords: 'colour color paint label icon folder',
+    title: 'Folder and tag colours',
+    body: 'Open a folder or a tag and choose “Color” in the toolbar (or “Colour…” in the ⋯ menu of a folder), then pick a colour (or “No colour”). A folder’s icon takes that colour in the list, the grid and the sidebar; a tag shows it as a coloured dot next to its name. Colours are the same on all your devices and adjust themselves for the dark theme.',
+    keywords: 'colour color paint label icon folder tag dot',
   },
 
   // --- Recycle bin --------------------------------------------------------------------
@@ -224,8 +245,8 @@ export const HELP_TOPICS: HelpTopic[] = [
     id: 'sync-status',
     section: 'Sync & devices',
     title: 'What the sync status means',
-    body: '“Synced”: everything is on the server. “N changes waiting”: saved here, not sent yet. “Syncing…”: sending now. “Sync problem · will retry”: the server could not be reached properly; nothing is lost and it retries on its own.',
-    keywords: 'synced syncing waiting status indicator',
+    body: 'A coloured dot shows the state at a glance. Green, “Synced”: everything is on the server. Yellow (pulsing while it works), “Syncing…” or “N changes waiting”: saved here, being sent or waiting to be sent. Red, “Sync problem · will retry”: the server could not be reached properly, or it refused a change; nothing is lost and it retries on its own. Grey, “Offline”: no connection and nothing waiting.',
+    keywords: 'synced syncing waiting status indicator dot green yellow red colour',
   },
   {
     id: 'conflicts',
@@ -309,9 +330,9 @@ export const HELP_TOPICS: HelpTopic[] = [
   {
     id: 'sidebar',
     section: 'Settings',
-    title: 'Resize the sidebar (desktop)',
-    body: 'Drag the thin line on the right edge of the sidebar. Double-click it to reset. With the line focused, the arrow keys also resize it.',
-    keywords: 'width panel wider narrower',
+    title: 'The sidebar and note width (desktop)',
+    body: 'Drag the thin line on the right edge of the sidebar to resize it; double-click it to reset, or use the arrow keys with the line focused. The button at the top of the sidebar (or the [ key) collapses it to a slim strip of icons, and expands it again. The arrows on the Folders and Tags headings fold those lists away. When a note fills the window, Settings › Note width chooses how wide its text is.',
+    keywords: 'width panel wider narrower collapse hide fold arrow icon strip',
   },
   {
     id: 'shortcuts',

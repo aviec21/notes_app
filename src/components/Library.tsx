@@ -2,17 +2,39 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BIN_RETENTION_DAYS } from '../../shared/sync'
 import type { ItemRef } from '../db/repo'
 import { useHotkeys } from '../hotkeys'
+import { CARD_SIZE_IDS, CARD_SIZE_KEY, CARD_SIZES, GRID_COLUMNS } from '../lib/cardSize'
 import { copyText } from '../lib/clipboard'
 import { downloadBlob, exportSelection } from '../lib/export'
 import { liveFolders, parseKey, sectionsFor, type LibraryData, type View } from '../lib/library'
 import { noteToMarkdown } from '../lib/markdown'
+import { usePref } from '../prefs'
 import { repo } from '../sync/runtime'
 import ItemCard from './ItemCard'
 import { folderColorVar } from '../lib/folderColors'
-import { FolderColorDialog, MoveDialog, TagsDialog } from './PickerDialogs'
+import { ColorDialog, MoveDialog, TagsDialog } from './PickerDialogs'
 import { useDialogs } from './ui/Dialogs'
-import { BackIcon, CloseIcon, GridIcon, ListIcon, MoreIcon, PinIcon, PlusIcon, SplitIcon, TrashIcon } from './ui/Icons'
+import {
+  BackIcon,
+  CloseIcon,
+  CopyIcon as CopyGlyph,
+  DownloadIcon,
+  FolderMoveIcon,
+  GridIcon,
+  ListIcon,
+  MoreIcon,
+  OpenIcon,
+  PaletteIcon,
+  PencilIcon,
+  PinIcon,
+  PlusIcon,
+  RestoreIcon,
+  SizeIcon,
+  SplitIcon,
+  TagIcon,
+  TrashIcon,
+} from './ui/Icons'
 import { Modal } from './ui/Modal'
+import { PopoverMenu, type MenuEntry } from './ui/PopoverMenu'
 
 export type ViewMode = 'list' | 'grid'
 
@@ -33,6 +55,8 @@ interface Props {
   onEditorMode?: (on: boolean) => void
   /** The note open in that panel, highlighted in the list. */
   activeNoteId?: string | null
+  /** Desktop list view: keep the list to half the width instead of stretching edge to edge. */
+  narrow?: boolean
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -115,6 +139,7 @@ export default function Library({
   editorMode,
   onEditorMode,
   activeNoteId,
+  narrow,
 }: Props) {
   const dialogs = useDialogs()
   const [selection, setSelection] = useState<Set<string>>(new Set())
@@ -122,8 +147,14 @@ export default function Library({
   const [moveOpen, setMoveOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
-  const [colorOpen, setColorOpen] = useState(false)
+  // Which folder or tag the colour picker is for.
+  const [colorFor, setColorFor] = useState<{ kind: 'folder' | 'tag'; id: string } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [size, setSize] = usePref(CARD_SIZE_KEY, 'average', CARD_SIZE_IDS)
+  // A card's ⋯ menu, or the card-size menu (`key` null), and where it opens.
+  const [menu, setMenu] = useState<{ key: string | null; anchor: DOMRect } | null>(null)
+  // Move / tag dialogs act on the selection, unless opened from one card's ⋯ menu.
+  const [dialogKeys, setDialogKeys] = useState<string[] | null>(null)
 
   useEffect(() => {
     if (!toast) return
@@ -151,26 +182,45 @@ export default function Library({
   const visibleKeys = useMemo(() => new Set(sections.flatMap((s) => s.items.map((i) => i.key))), [sections])
   // Only items that are still on screen count as selected (a search may hide some).
   const selectedKeys = useMemo(() => [...selection].filter((k) => visibleKeys.has(k)), [selection, visibleKeys])
-  const selectedRefs: ItemRef[] = selectedKeys.map((key) => {
-    const { kind, id } = parseKey(key)
-    return { entity: kind, id }
-  })
-  const selectedNoteIds = selectedRefs.filter((r) => r.entity === 'note').map((r) => r.id)
-  const selectedNotes = data.notes.filter((n) => selectedNoteIds.includes(n.id))
+  const refsFor = (keys: string[]): ItemRef[] =>
+    keys.map((key) => {
+      const { kind, id } = parseKey(key)
+      return { entity: kind, id }
+    })
+  const noteIdsFor = (keys: string[]) => refsFor(keys).filter((r) => r.entity === 'note').map((r) => r.id)
+  const selectedRefs = refsFor(selectedKeys)
+  const selectedNoteIds = noteIdsFor(selectedKeys)
   const selecting = selectedKeys.length > 0
   const allSelected = visibleKeys.size > 0 && selectedKeys.length === visibleKeys.size
   const showCheckbox = isDesktop || selectMode || selecting
   const bodyToggles = inBin || (!isDesktop && (selectMode || selecting))
 
+  // The move and tag dialogs work on one card (opened from its ⋯ menu) or on the selection.
+  const dialogTargetKeys = dialogKeys ?? selectedKeys
+  const dialogNoteIds = noteIdsFor(dialogTargetKeys)
+  const dialogNotes = data.notes.filter((n) => dialogNoteIds.includes(n.id))
+  const closeDialogs = () => {
+    setMoveOpen(false)
+    setTagsOpen(false)
+    setDialogKeys(null)
+  }
+
   const isPinned = (ref: ItemRef) =>
     ref.entity === 'note'
       ? !!data.notes.find((n) => n.id === ref.id)?.pinned
       : !!data.folders.find((f) => f.id === ref.id)?.pinned
-  const everythingPinned = selecting && selectedRefs.every(isPinned)
+  const allPinned = (keys: string[]) => keys.length > 0 && refsFor(keys).every(isPinned)
+  const everythingPinned = selecting && allPinned(selectedKeys)
 
   const clearSelection = () => {
     setSelection(new Set())
     setSelectMode(false)
+  }
+  // After acting on some items, they leave the selection (all of it, when it was the selection).
+  const finished = (keys: string[]) => {
+    const remaining = selectedKeys.filter((k) => !keys.includes(k))
+    setSelection(new Set(remaining))
+    if (remaining.length === 0) setSelectMode(false)
   }
   // Touch-and-hold on a phone: enter selection with that item picked, like tapping Select.
   const startSelectingWith = (key: string) => {
@@ -206,38 +256,41 @@ export default function Library({
     if (name) await repo.createFolder(name)
   }
 
-  async function trashSelected() {
-    if (!selecting) return
-    const folders = selectedRefs.filter((r) => r.entity === 'folder').length
-    const what = selectedRefs.length === 1 ? (folders ? 'this folder' : 'this note') : `these ${selectedRefs.length} items`
+  // The actions below work on the selection, or on `keys` (one card, from its ⋯ menu).
+
+  async function trashSelected(keys = selectedKeys) {
+    if (keys.length === 0) return
+    const refs = refsFor(keys)
+    const folders = refs.filter((r) => r.entity === 'folder').length
+    const what = refs.length === 1 ? (folders ? 'this folder' : 'this note') : `these ${refs.length} items`
     const ok = await dialogs.confirm({
       title: 'Move to recycle bin?',
-      message: `Move ${what} to the recycle bin? ${folders ? 'Folders take their notes with them. ' : ''}You can restore ${selectedRefs.length === 1 ? 'it' : 'them'} for ${BIN_RETENTION_DAYS} days.`,
+      message: `Move ${what} to the recycle bin? ${folders ? 'Folders take their notes with them. ' : ''}You can restore ${refs.length === 1 ? 'it' : 'them'} for ${BIN_RETENTION_DAYS} days.`,
       confirmLabel: 'Move to bin',
       danger: true,
     })
     if (!ok) return
-    await repo.trash(selectedRefs)
-    clearSelection()
+    await repo.trash(refs)
+    finished(keys)
   }
 
-  async function restoreSelected() {
-    if (!selecting) return
-    await repo.restore(selectedRefs)
-    clearSelection()
+  async function restoreSelected(keys = selectedKeys) {
+    if (keys.length === 0) return
+    await repo.restore(refsFor(keys))
+    finished(keys)
   }
 
-  async function deleteSelectedForever() {
-    if (!selecting) return
+  async function deleteSelectedForever(keys = selectedKeys) {
+    if (keys.length === 0) return
     const ok = await dialogs.confirm({
       title: 'Delete forever?',
-      message: `${plural(selectedRefs.length, 'item')} will be permanently deleted. This cannot be undone.`,
+      message: `${plural(keys.length, 'item')} will be permanently deleted. This cannot be undone.`,
       confirmLabel: 'Delete forever',
       danger: true,
     })
     if (!ok) return
-    await repo.deleteForever(selectedRefs)
-    clearSelection()
+    await repo.deleteForever(refsFor(keys))
+    finished(keys)
   }
 
   async function emptyBin() {
@@ -250,20 +303,26 @@ export default function Library({
     if (ok) await repo.emptyBin()
   }
 
-  const togglePinSelected = async () => {
-    if (!selecting) return
-    await repo.setPinned(selectedRefs, !everythingPinned)
+  const togglePinSelected = async (keys = selectedKeys) => {
+    if (keys.length === 0) return
+    await repo.setPinned(refsFor(keys), !allPinned(keys))
   }
 
   async function moveSelected(folderId: string | null) {
-    setMoveOpen(false)
-    await repo.moveNotes(selectedNoteIds, folderId)
-    clearSelection()
+    const keys = dialogTargetKeys
+    closeDialogs()
+    await repo.moveNotes(noteIdsFor(keys), folderId)
+    finished(keys)
   }
 
   async function newFolderAndMove() {
+    const keys = dialogTargetKeys // the prompt closes the dialog, so remember which cards
     const name = await dialogs.prompt({ title: 'New folder', label: 'Folder name', confirmLabel: 'Create and move' })
-    if (name) await moveSelected(await repo.createFolder(name))
+    if (!name) return
+    const id = await repo.createFolder(name)
+    closeDialogs()
+    await repo.moveNotes(noteIdsFor(keys), id)
+    finished(keys)
   }
 
   async function renameItem(ref: ItemRef) {
@@ -281,10 +340,10 @@ export default function Library({
   }
 
   /** Downloads the selected notes and folders as one Markdown file. */
-  async function exportSelected() {
-    if (!selecting) return
+  async function exportSelected(keys = selectedKeys) {
+    if (keys.length === 0) return
     try {
-      const result = await exportSelection(selectedRefs)
+      const result = await exportSelection(refsFor(keys))
       downloadBlob(new Blob([result.text], { type: 'text/markdown;charset=utf-8' }), result.filename)
       setToast(
         `Downloaded ${result.filename} — ${plural(result.notes, 'note')}${result.folders ? ` from ${plural(result.folders, 'folder')}` : ''}.` +
@@ -297,8 +356,9 @@ export default function Library({
   }
 
   /** Copies the selected notes as Markdown, one after another. */
-  async function copySelected() {
-    const chosen = data.notes.filter((n) => selectedNoteIds.includes(n.id))
+  async function copySelected(keys = selectedKeys) {
+    const ids = noteIdsFor(keys)
+    const chosen = data.notes.filter((n) => ids.includes(n.id))
     if (chosen.length === 0) return
     const text = chosen.map((n) => noteToMarkdown(n.title, n.content)).join('\n\n---\n\n')
     const result = await copyText(text)
@@ -316,6 +376,55 @@ export default function Library({
   }
 
   const renameFolder = () => (folder ? renameItem({ entity: 'folder', id: folder.id }) : Promise.resolve())
+
+  // --- the ⋯ menu on a card -----------------------------------------------------------
+
+  function menuEntries(key: string): MenuEntry[] {
+    const { kind, id } = parseKey(key)
+    const ref: ItemRef = { entity: kind, id }
+    const keys = [key]
+    if (inBin) {
+      return [
+        { label: 'Restore', icon: <RestoreIcon />, onSelect: () => void restoreSelected(keys) },
+        { label: 'Delete forever', icon: <TrashIcon />, danger: true, separatorBefore: true, onSelect: () => void deleteSelectedForever(keys) },
+      ]
+    }
+    const isNote = kind === 'note'
+    return [
+      { label: 'Open', icon: <OpenIcon />, onSelect: () => open(key) },
+      { label: 'Rename', icon: <PencilIcon />, onSelect: () => void renameItem(ref) },
+      ...(isNote
+        ? [
+            {
+              label: 'Move to folder…',
+              icon: <FolderMoveIcon />,
+              onSelect: () => {
+                setDialogKeys(keys)
+                setMoveOpen(true)
+              },
+            },
+            {
+              label: 'Tags…',
+              icon: <TagIcon />,
+              onSelect: () => {
+                setDialogKeys(keys)
+                setTagsOpen(true)
+              },
+            },
+          ]
+        : [{ label: 'Colour…', icon: <PaletteIcon />, onSelect: () => setColorFor({ kind: 'folder', id }) }]),
+      { label: allPinned(keys) ? 'Unpin' : 'Pin', icon: <PinIcon />, onSelect: () => void togglePinSelected(keys) },
+      ...(isNote ? [{ label: 'Copy as Markdown', icon: <CopyGlyph />, onSelect: () => void copySelected(keys) }] : []),
+      { label: 'Export as Markdown', icon: <DownloadIcon />, onSelect: () => void exportSelected(keys) },
+      { label: 'Delete', icon: <TrashIcon />, danger: true, separatorBefore: true, onSelect: () => void trashSelected(keys) },
+    ]
+  }
+
+  const sizeEntries: MenuEntry[] = CARD_SIZES.map((s) => ({
+    label: s.label,
+    checked: size === s.id,
+    onSelect: () => setSize(s.id),
+  }))
 
   async function renameTag() {
     if (!tag) return
@@ -423,12 +532,18 @@ export default function Library({
           ? 'This folder is empty.'
           : 'No notes yet. Create your first note.'
 
-  const container =
-    mode === 'grid' ? 'grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(220px,1fr))]' : 'flex flex-col gap-2'
+  const container = mode === 'grid' ? GRID_COLUMNS[size] : 'flex flex-col gap-2'
   // Grid columns share the row equally, so every card has the same width as well as height.
 
+  const colorItem =
+    colorFor?.kind === 'folder'
+      ? data.folders.find((f) => f.id === colorFor.id && f.deletedAt === null)
+      : colorFor?.kind === 'tag'
+        ? data.tags.find((t) => t.id === colorFor.id)
+        : undefined
+
   return (
-    <div className="flex flex-col gap-4 pb-28">
+    <div data-library className={`flex flex-col gap-4 pb-28 ${narrow ? 'max-w-[max(50%,32rem)]' : ''}`}>
       {banner}
 
       {/*
@@ -551,7 +666,10 @@ export default function Library({
               {view.kind === 'folder' && !searching && (
                 <>
                   <ToolButton onClick={() => void renameFolder()}>Rename</ToolButton>
-                  <ToolButton onClick={() => setColorOpen(true)} hint="Choose a colour for this folder">
+                  <ToolButton
+                    onClick={() => folder && setColorFor({ kind: 'folder', id: folder.id })}
+                    hint="Choose a colour for this folder"
+                  >
                     {folderColorVar(folder?.color) && (
                       <span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: folderColorVar(folder?.color) }} />
                     )}
@@ -570,6 +688,12 @@ export default function Library({
               {view.kind === 'tag' && tag && !searching && (
                 <>
                   <ToolButton onClick={() => void renameTag()}>Rename</ToolButton>
+                  <ToolButton onClick={() => setColorFor({ kind: 'tag', id: tag.id })} hint="Choose a colour for this tag">
+                    {folderColorVar(tag.color) && (
+                      <span aria-hidden="true" className="h-3 w-3 rounded-full" style={{ background: folderColorVar(tag.color) }} />
+                    )}
+                    Color
+                  </ToolButton>
                   <ToolButton onClick={() => void deleteTag()} danger>
                     <TrashIcon /> Delete tag
                   </ToolButton>
@@ -597,6 +721,17 @@ export default function Library({
                   </button>
                 ))}
               </div>
+              <button
+                type="button"
+                onClick={(e) => setMenu({ key: null, anchor: e.currentTarget.getBoundingClientRect() })}
+                aria-haspopup="menu"
+                aria-label="Card size"
+                title="Card size: small, average or big"
+                className="shrink-0 rounded-lg px-3 py-2"
+                style={{ border: '1px solid var(--border)' }}
+              >
+                <SizeIcon />
+              </button>
               {onEditorMode && (
                 <button
                   type="button"
@@ -657,6 +792,7 @@ export default function Library({
                   key={item.key}
                   item={item}
                   mode={mode}
+                  size={size}
                   selected={selection.has(item.key)}
                   showCheckbox={showCheckbox}
                   bodyToggles={bodyToggles}
@@ -666,6 +802,7 @@ export default function Library({
                   onOpen={() => open(item.key)}
                   onToggle={() => toggle(item.key)}
                   onLongPress={isDesktop ? undefined : () => startSelectingWith(item.key)}
+                  onMenu={selecting ? undefined : (anchor) => setMenu({ key: item.key, anchor })}
                 />
               ))}
             </div>
@@ -742,33 +879,42 @@ export default function Library({
         </div>
       </Modal>
 
-      <FolderColorDialog
-        open={colorOpen}
-        folder={folder}
+      {menu && (
+        <PopoverMenu
+          anchor={menu.anchor}
+          label={menu.key ? 'Item options' : 'Card size'}
+          entries={menu.key ? menuEntries(menu.key) : sizeEntries}
+          onClose={() => setMenu(null)}
+        />
+      )}
+
+      <ColorDialog
+        open={colorFor !== null}
+        kind={colorFor?.kind ?? 'folder'}
+        item={colorItem}
         onPick={(color) => {
-          if (folder) void repo.setFolderColor(folder.id, color)
-          setColorOpen(false)
+          if (colorFor?.kind === 'folder') void repo.setFolderColor(colorFor.id, color)
+          else if (colorFor?.kind === 'tag') void repo.setTagColor(colorFor.id, color)
+          setColorFor(null)
         }}
-        onClose={() => setColorOpen(false)}
+        onClose={() => setColorFor(null)}
       />
 
       <MoveDialog
         open={moveOpen}
         folders={liveFolders(data).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))}
-        count={selectedNoteIds.length}
+        count={dialogNoteIds.length}
         onPick={(id) => void moveSelected(id)}
         onNewFolder={() => void newFolderAndMove()}
-        onClose={() => setMoveOpen(false)}
+        onClose={closeDialogs}
       />
       <TagsDialog
         open={tagsOpen}
         tags={data.tags}
-        notes={selectedNotes}
-        onToggle={(tagId, on) => void repo.tagNotes(selectedNoteIds, tagId, on)}
-        onCreate={(name) =>
-          void repo.createTag(name).then((tagId) => repo.tagNotes(selectedNoteIds, tagId, true))
-        }
-        onClose={() => setTagsOpen(false)}
+        notes={dialogNotes}
+        onToggle={(tagId, on) => void repo.tagNotes(dialogNoteIds, tagId, on)}
+        onCreate={(name) => void repo.createTag(name).then((tagId) => repo.tagNotes(dialogNoteIds, tagId, true))}
+        onClose={closeDialogs}
       />
     </div>
   )

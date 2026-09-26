@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import 'fake-indexeddb/auto'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -142,11 +142,11 @@ describe('Library on desktop', () => {
     const user = userEvent.setup()
     render(<Harness data={await load()} onOpenNote={onOpenNote} />)
 
-    await user.click(screen.getByRole('button', { name: /Groceries/ }))
+    await user.click(screen.getByRole('button', { name: /^Groceries/ }))
     expect(onOpenNote).toHaveBeenCalledWith(ids.loose)
 
     await user.keyboard('{Control>}')
-    await user.click(screen.getByRole('button', { name: /Ideas/ }))
+    await user.click(screen.getByRole('button', { name: /^Ideas/ }))
     await user.keyboard('{/Control}')
     expect(screen.getByText('1 selected')).toBeTruthy()
   })
@@ -156,7 +156,7 @@ describe('Library on desktop', () => {
     const onNavigate = vi.fn()
     const user = userEvent.setup()
     render(<Harness data={await load()} onNavigate={onNavigate} />)
-    await user.click(screen.getByRole('button', { name: /Work/ }))
+    await user.click(screen.getByRole('button', { name: /^Work/ }))
     expect(onNavigate).toHaveBeenCalledWith({ kind: 'folder', id: ids.folder })
   })
 
@@ -385,7 +385,7 @@ describe('search results', () => {
       </DialogProvider>,
     )
     void user
-    const card = screen.getByRole('button', { name: /Groceries/ })
+    const card = screen.getByRole('button', { name: /^Groceries/ })
     const marks = [...card.querySelectorAll('mark')].map((m) => m.textContent)
     expect(marks).toEqual(['eggs'.slice(0, 3)]) // "milk and eggs": the matched letters, in the note's own capitals
   })
@@ -446,7 +446,7 @@ describe('folder colours', () => {
     const ids = await seed()
     await repo.setFolderColor(ids.folder, 'violet')
     render(<Harness data={await load()} />)
-    const card = screen.getByRole('button', { name: /Work/ })
+    const card = screen.getByRole('button', { name: /^Work/ })
     const icon = card.querySelector('svg') as SVGElement
     expect(icon.style.color).toBe('var(--folder-violet)')
   })
@@ -658,7 +658,7 @@ describe('Library on a phone', () => {
     const onOpenNote = vi.fn()
     render(<Harness data={await load()} isDesktop={false} onOpenNote={onOpenNote} />)
 
-    const card = screen.getByRole('button', { name: /Groceries/ })
+    const card = screen.getByRole('button', { name: /^Groceries/ })
     fireEvent.pointerDown(card, { pointerType: 'touch', clientX: 10, clientY: 10 })
     await new Promise((r) => setTimeout(r, 650))
     fireEvent.pointerUp(card)
@@ -669,7 +669,7 @@ describe('Library on a phone', () => {
     expect((screen.getByRole('checkbox', { name: 'Select Groceries' }) as HTMLInputElement).checked).toBe(true)
 
     // Further taps now pick items instead of opening them.
-    fireEvent.click(screen.getByRole('button', { name: /Ideas/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Ideas/ }))
     expect(screen.getByText('2 selected')).toBeTruthy()
     expect(onOpenNote).not.toHaveBeenCalledWith(ids.other)
   })
@@ -677,7 +677,7 @@ describe('Library on a phone', () => {
   it('does not treat a scroll (finger moving) as a hold', async () => {
     await seed()
     render(<Harness data={await load()} isDesktop={false} />)
-    const card = screen.getByRole('button', { name: /Groceries/ })
+    const card = screen.getByRole('button', { name: /^Groceries/ })
     fireEvent.pointerDown(card, { pointerType: 'touch', clientX: 10, clientY: 10 })
     fireEvent.pointerMove(card, { pointerType: 'touch', clientX: 10, clientY: 60 })
     await new Promise((r) => setTimeout(r, 650))
@@ -733,5 +733,343 @@ describe('recycle bin view', () => {
     expect(within(dialog).getByText(/cannot be undone/)).toBeTruthy()
     await user.click(within(dialog).getByRole('button', { name: 'Delete forever', hidden: true }))
     await waitFor(async () => expect(await db.notes.get(ids.loose)).toBeUndefined())
+  })
+})
+
+// --- ⋯ menu on each card, card sizes, tag colours ----------------------------------------
+
+describe('the ⋯ options menu on each card', () => {
+  beforeEach(() => localStorage.clear())
+
+  const optionsFor = (title: string) => screen.getByRole('button', { name: `Options for ${title}` })
+  const menuItems = () => within(screen.getByRole('menu')).getAllByRole('menuitem').map((i) => i.textContent?.trim())
+
+  it('puts a ⋯ button on every note and folder', async () => {
+    await seed()
+    render(<Harness data={await load()} />)
+    for (const title of ['Work', 'Groceries', 'Ideas']) expect(optionsFor(title)).toBeTruthy()
+  })
+
+  it('offers Rename, Move, Tags, Pin, Copy, Export and Delete for a note', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Groceries'))
+    expect(menuItems()).toEqual(['Open', 'Rename', 'Move to folder…', 'Tags…', 'Pin', 'Copy as Markdown', 'Export as Markdown', 'Delete'])
+  })
+
+  it('offers Colour (not Move or Tags) for a folder', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Work'))
+    expect(menuItems()).toEqual(['Open', 'Rename', 'Colour…', 'Pin', 'Export as Markdown', 'Delete'])
+  })
+
+  it('opens the menu without opening the note', async () => {
+    await seed()
+    const onOpenNote = vi.fn()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} onOpenNote={onOpenNote} />)
+    await user.click(optionsFor('Groceries'))
+    expect(screen.getByRole('menu')).toBeTruthy()
+    expect(onOpenNote).not.toHaveBeenCalled()
+  })
+
+  it('closes on Escape and on a click elsewhere', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Groceries'))
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    await user.click(optionsFor('Groceries'))
+    await user.click(document.body)
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('moves through the entries with the arrow keys', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Groceries'))
+    await waitFor(() => expect(document.activeElement?.textContent).toContain('Open'))
+    await user.keyboard('{ArrowDown}')
+    expect(document.activeElement?.textContent).toContain('Rename')
+    await user.keyboard('{ArrowUp}{ArrowUp}')
+    expect(document.activeElement?.textContent).toContain('Delete') // wraps round
+  })
+
+  it('Open opens the note', async () => {
+    const ids = await seed()
+    const onOpenNote = vi.fn()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} onOpenNote={onOpenNote} />)
+    await user.click(optionsFor('Groceries'))
+    await user.click(screen.getByRole('menuitem', { name: 'Open' }))
+    expect(onOpenNote).toHaveBeenCalledWith(ids.loose)
+  })
+
+  it('Rename renames just that note', async () => {
+    const ids = await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Groceries'))
+    await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    const dialog = await openDialog()
+    const input = within(dialog).getByRole('textbox', { hidden: true })
+    expect((input as HTMLInputElement).value).toBe('Groceries')
+    await user.clear(input)
+    await user.type(input, 'Shopping{Enter}')
+    await waitFor(async () => expect((await db.notes.get(ids.loose))?.title).toBe('Shopping'))
+    expect((await db.notes.get(ids.other))?.title).toBe('Ideas')
+  })
+
+  it('Pin pins only that card', async () => {
+    const ids = await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Groceries'))
+    await user.click(screen.getByRole('menuitem', { name: 'Pin' }))
+    await waitFor(async () => expect((await db.notes.get(ids.loose))?.pinned).toBe(true))
+    expect((await db.notes.get(ids.other))?.pinned).toBe(false)
+  })
+
+  it('offers Unpin for a pinned note', async () => {
+    const ids = await seed()
+    await repo.setPinned([{ entity: 'note', id: ids.loose }], true)
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Groceries'))
+    expect(menuItems()).toContain('Unpin')
+  })
+
+  it('Move to folder moves only that note, even while other notes are ticked', async () => {
+    const ids = await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Groceries'))
+    await user.click(screen.getByRole('menuitem', { name: 'Move to folder…' }))
+    const dialog = await openDialog()
+    expect(within(dialog).getByText('Move 1 note to…')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Work', hidden: true }))
+    await waitFor(async () => expect((await db.notes.get(ids.loose))?.folderId).toBe(ids.folder))
+    expect((await db.notes.get(ids.other))?.folderId).toBeNull()
+  })
+
+  it('Tags… tags just that note', async () => {
+    const ids = await seed()
+    const tag = await repo.createTag('urgent')
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Groceries'))
+    await user.click(screen.getByRole('menuitem', { name: 'Tags…' }))
+    const dialog = await openDialog()
+    expect(within(dialog).getByText('Tag 1 note')).toBeTruthy()
+    await user.click(within(dialog).getByRole('checkbox', { name: /urgent/, hidden: true }))
+    await waitFor(async () => expect((await db.notes.get(ids.loose))?.tagIds).toEqual([tag]))
+    expect((await db.notes.get(ids.other))?.tagIds).toEqual([])
+  })
+
+  it('Colour… colours that folder', async () => {
+    const ids = await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Work'))
+    await user.click(screen.getByRole('menuitem', { name: 'Colour…' }))
+    await user.click(within(await openDialog()).getByRole('button', { name: 'Teal', hidden: true }))
+    await waitFor(async () => expect((await db.folders.get(ids.folder))?.color).toBe('teal'))
+  })
+
+  it('Delete asks first, then bins only that card', async () => {
+    const ids = await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(optionsFor('Groceries'))
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    const dialog = await openDialog()
+    expect(within(dialog).getByText(/this note/)).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Move to bin', hidden: true }))
+    await waitFor(async () => expect((await db.notes.get(ids.loose))?.deletedAt).not.toBeNull())
+    expect((await db.notes.get(ids.other))?.deletedAt).toBeNull()
+  })
+
+  it('is not shown while items are being selected', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Groceries' }))
+    expect(screen.queryByRole('button', { name: /^Options for/ })).toBeNull()
+  })
+
+  it('offers Restore and Delete forever in the recycle bin', async () => {
+    const ids = await seed()
+    await repo.trashNotes([ids.loose])
+    const user = userEvent.setup()
+    render(<Harness data={await load()} view={{ kind: 'bin' }} />)
+    await user.click(optionsFor('Groceries'))
+    expect(menuItems()).toEqual(['Restore', 'Delete forever'])
+    await user.click(screen.getByRole('menuitem', { name: 'Restore' }))
+    await waitFor(async () => expect((await db.notes.get(ids.loose))?.deletedAt).toBeNull())
+  })
+
+  it('works on a phone too', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} isDesktop={false} />)
+    await user.click(optionsFor('Ideas'))
+    expect(menuItems()).toContain('Rename')
+  })
+})
+
+describe('card size (small, average, big)', () => {
+  beforeEach(() => localStorage.clear())
+  const cards = () => [...document.querySelectorAll<HTMLElement>('[data-card]')]
+
+  async function chooseSize(user: ReturnType<typeof userEvent.setup>, label: string) {
+    await user.click(screen.getByRole('button', { name: 'Card size' }))
+    await user.click(screen.getByRole('menuitemradio', { name: label }))
+  }
+
+  it('starts at average, ticked in the menu', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await user.click(screen.getByRole('button', { name: 'Card size' }))
+    expect(screen.getByRole('menuitemradio', { name: 'Average' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('menuitemradio', { name: 'Big' }).getAttribute('aria-checked')).toBe('false')
+    for (const card of cards()) expect(card.dataset.size).toBe('average')
+  })
+
+  it('big list rows are taller and preview two lines', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await chooseSize(user, 'Big')
+    for (const card of cards()) {
+      expect(card.dataset.size).toBe('big')
+      expect(card.className).toContain('h-28')
+    }
+    expect(document.querySelector('[data-card] span.line-clamp-2')).not.toBeNull()
+  })
+
+  it('small list rows are shorter and show no preview line', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await chooseSize(user, 'Small')
+    for (const card of cards()) expect(card.className).toContain('h-12')
+    expect(screen.queryByText('milk and eggs')).toBeNull()
+    expect(screen.getByText('Groceries')).toBeTruthy() // the title is still there
+  })
+
+  it('big grid cards are taller and preview four lines; small ones one', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} mode="grid" />)
+    await chooseSize(user, 'Big')
+    for (const card of cards()) expect(card.className).toContain('h-52')
+    expect(document.querySelector('[data-card] span.line-clamp-4')).not.toBeNull()
+    await chooseSize(user, 'Small')
+    for (const card of cards()) expect(card.className).toContain('h-28')
+    expect(document.querySelector('[data-card] span.line-clamp-1')).not.toBeNull()
+  })
+
+  it('keeps every card the same size, whatever it holds', async () => {
+    const short = await repo.createNote()
+    await repo.setNoteText(short, 'Short', 'hi')
+    const long = await repo.createNote()
+    await repo.setNoteText(long, 'A very long note', 'word '.repeat(2000))
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await chooseSize(user, 'Big')
+    expect(new Set(cards().map((c) => c.className.match(/h-\S+/)?.[0])).size).toBe(1)
+  })
+
+  it('is remembered', async () => {
+    await seed()
+    const user = userEvent.setup()
+    const first = render(<Harness data={await load()} />)
+    await chooseSize(user, 'Big')
+    first.unmount()
+    render(<Harness data={await load()} />)
+    for (const card of cards()) expect(card.dataset.size).toBe('big')
+  })
+
+  it('applies to folders as well as notes', async () => {
+    await seed()
+    const user = userEvent.setup()
+    render(<Harness data={await load()} />)
+    await chooseSize(user, 'Small')
+    const folder = screen.getByText('Work').closest('[data-card]') as HTMLElement
+    expect(folder.dataset.size).toBe('small')
+  })
+})
+
+describe('tag colours', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('can be chosen on the tag page and are saved', async () => {
+    const ids = await seed()
+    const tag = await repo.createTag('urgent')
+    await repo.setNoteTags(ids.loose, [tag])
+    const user = userEvent.setup()
+    render(<Harness data={await load()} view={{ kind: 'tag', id: tag }} />)
+    await user.click(screen.getByRole('button', { name: /Color/ }))
+    const dialog = await openDialog()
+    expect(within(dialog).getByText('Colour for #urgent')).toBeTruthy()
+    await user.click(within(dialog).getByRole('button', { name: 'Red', hidden: true }))
+    await waitFor(async () => expect((await db.tags.get(tag))?.color).toBe('red'))
+  })
+
+  it('show as a coloured dot on the tag chip of a note', async () => {
+    const ids = await seed()
+    const tag = await repo.createTag('urgent')
+    await repo.setNoteTags(ids.loose, [tag])
+    await repo.setTagColor(tag, 'green')
+    render(<Harness data={await load()} />)
+    const dot = document.querySelector<HTMLElement>('[data-tag-dot]')
+    expect(dot?.style.background).toBe('var(--folder-green)')
+  })
+
+  it('a tag with no colour has no dot', async () => {
+    const ids = await seed()
+    const tag = await repo.createTag('urgent')
+    await repo.setNoteTags(ids.loose, [tag])
+    render(<Harness data={await load()} />)
+    expect(screen.getByText(/urgent/)).toBeTruthy()
+    expect(document.querySelector('[data-tag-dot]')).toBeNull()
+  })
+
+  it('can be cleared', async () => {
+    const tag = await repo.createTag('urgent')
+    await repo.setTagColor(tag, 'blue')
+    const user = userEvent.setup()
+    render(<Harness data={await load()} view={{ kind: 'tag', id: tag }} />)
+    await user.click(screen.getByRole('button', { name: /Color/ }))
+    await user.click(within(await openDialog()).getByRole('button', { name: 'No colour', hidden: true }))
+    await waitFor(async () => expect((await db.tags.get(tag))?.color).toBeNull())
+  })
+
+  it('cannot be set to something that is not on the palette', async () => {
+    const tag = await repo.createTag('urgent')
+    await expect(repo.setTagColor(tag, '#ff0000')).rejects.toThrow('Unknown tag colour')
+    expect((await db.tags.get(tag))?.color).toBeNull()
+  })
+})
+
+describe('list width on a computer', () => {
+  it('is limited to half the width when asked (list view beside the sidebar)', async () => {
+    await seed()
+    const wide = render(
+      <DialogProvider>
+        <Library data={await load()} view={{ kind: 'root' }} query="" mode="list" onMode={() => {}} isDesktop onNavigate={() => {}} onClearQuery={() => {}} onOpenNote={() => {}} narrow />
+      </DialogProvider>,
+    )
+    expect(wide.container.querySelector('[data-library]')?.className).toContain('max-w-[max(50%,32rem)]')
+    wide.unmount()
+    const full = render(<Harness data={await load()} />)
+    expect(full.container.querySelector('[data-library]')?.className).not.toContain('max-w-')
   })
 })

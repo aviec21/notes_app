@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { usePendingCount } from '../hooks'
+import { useIsDesktop, usePendingCount } from '../hooks'
 import { storageInfo, type StorageInfo } from '../storage'
 import { downloadBlob, exportAllNotes } from '../lib/export'
+import { NOTE_WIDTH_IDS, NOTE_WIDTH_KEY, NOTE_WIDTHS } from '../lib/noteWidth'
+import { usePref } from '../prefs'
 import { useTheme, type Theme } from '../theme'
 import ChangePin from './ChangePin'
 import RecoverySection from './RecoveryCode'
@@ -110,6 +112,8 @@ export default function SettingsDialog({
   const dialogs = useDialogs()
   const pending = usePendingCount()
   const { theme, setTheme } = useTheme()
+  const isDesktop = useIsDesktop()
+  const [noteWidth, setNoteWidth] = usePref(NOTE_WIDTH_KEY, 'medium', NOTE_WIDTH_IDS)
 
   async function signOut() {
     if (pending > 0) {
@@ -152,6 +156,30 @@ export default function SettingsDialog({
             ))}
           </div>
         </section>
+
+        {isDesktop && (
+          <section className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium">Note width</h3>
+            <p className="text-sm" style={{ color: 'var(--muted)' }}>
+              How wide the text is when a note fills the window. (In editor mode, drag the divider between the list and the
+              note instead.)
+            </p>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Note width">
+              {NOTE_WIDTHS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setNoteWidth(id)}
+                  aria-pressed={noteWidth === id}
+                  className={buttonStyles.base}
+                  style={noteWidth === id ? buttonStyles.primary : buttonStyles.plain}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         <ExportSection />
 

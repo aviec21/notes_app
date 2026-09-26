@@ -1,74 +1,112 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useNumberPref } from './prefs'
 
-const KEY = 'notes.sidebarWidth'
 export const SIDEBAR_MIN = 200
 export const SIDEBAR_MAX = 480
-const DEFAULT = 280
+const SIDEBAR_DEFAULT = 280
+/** Width of the sidebar when it is collapsed to a strip of icons. */
+export const RAIL_WIDTH = 56
+
+export const LIST_MIN = 280
+export const LIST_MAX = 900
+const LIST_DEFAULT = 420
+
 const STEP = 16
 
-function readStored(): number {
-  try {
-    const value = Number(localStorage.getItem(KEY))
-    if (Number.isFinite(value) && value >= SIDEBAR_MIN && value <= SIDEBAR_MAX) return value
-  } catch {
-    // Storage unavailable: use the default width.
-  }
-  return DEFAULT
+interface Options {
+  /** localStorage key the width is remembered under. */
+  key: string
+  min: number
+  max: number
+  initial: number
+  label: string
+  /** Distance from the window's left edge to where the panel starts; the pointer's x minus this is the width. */
+  origin?: () => number
 }
 
-const clamp = (value: number) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(value)))
-
-/** Width state and drag/keyboard handlers for the resizable sidebar's divider. */
-export function useSidebarWidth() {
-  const [width, setWidthState] = useState(readStored)
+/**
+ * Width state and drag / keyboard handlers for a divider you can pull to resize the panel
+ * on its left. The width is remembered on this device; double-click (or Home) resets it.
+ */
+function useDividerWidth({ key, min, max, initial, label, origin = () => 0 }: Options) {
+  const [stored, setStored] = useNumberPref(key, initial, min, max)
+  const [live, setLive] = useState<number | null>(null) // while dragging, before it is saved
   const dragging = useRef(false)
-  const latest = useRef(width)
+  const latest = useRef(stored)
+  const width = live ?? stored
 
-  const setWidth = (next: number) => {
+  const clamp = (value: number) => Math.min(max, Math.max(min, Math.round(value)))
+  const move = (next: number) => {
     latest.current = clamp(next)
-    setWidthState(latest.current)
+    setLive(latest.current)
   }
-  const persist = () => {
-    try {
-      localStorage.setItem(KEY, String(latest.current))
-    } catch {
-      // The width still applies for this session.
-    }
+  const save = () => {
+    setStored(latest.current)
+    setLive(null)
   }
 
   const separatorProps = {
     role: 'separator' as const,
     'aria-orientation': 'vertical' as const,
-    'aria-label': 'Resize sidebar',
+    'aria-label': label,
     'aria-valuenow': width,
-    'aria-valuemin': SIDEBAR_MIN,
-    'aria-valuemax': SIDEBAR_MAX,
+    'aria-valuemin': min,
+    'aria-valuemax': max,
     tabIndex: 0,
     onPointerDown: (e: PointerEvent<HTMLElement>) => {
       e.currentTarget.setPointerCapture(e.pointerId)
       dragging.current = true
+      latest.current = width
     },
-    // The sidebar starts at the window's left edge, so the pointer's x is the new width.
     onPointerMove: (e: PointerEvent<HTMLElement>) => {
-      if (dragging.current) setWidth(e.clientX)
+      if (dragging.current) move(e.clientX - origin())
     },
     onPointerUp: () => {
+      if (!dragging.current) return
       dragging.current = false
-      persist()
+      save()
+    },
+    onPointerCancel: () => {
+      dragging.current = false
+      setLive(null)
     },
     onDoubleClick: () => {
-      setWidth(DEFAULT)
-      persist()
+      latest.current = initial
+      save()
     },
     onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
-      if (e.key === 'ArrowLeft') setWidth(latest.current - STEP)
-      else if (e.key === 'ArrowRight') setWidth(latest.current + STEP)
-      else if (e.key === 'Home') setWidth(DEFAULT)
+      latest.current = width
+      if (e.key === 'ArrowLeft') move(width - STEP)
+      else if (e.key === 'ArrowRight') move(width + STEP)
+      else if (e.key === 'Home') latest.current = initial
       else return
       e.preventDefault()
-      persist()
+      save()
     },
   }
 
   return { width, separatorProps }
+}
+
+/** The sidebar's width. It starts at the window's left edge, so the pointer's x is the width. */
+export function useSidebarWidth() {
+  return useDividerWidth({
+    key: 'notes.sidebarWidth',
+    min: SIDEBAR_MIN,
+    max: SIDEBAR_MAX,
+    initial: SIDEBAR_DEFAULT,
+    label: 'Resize sidebar',
+  })
+}
+
+/** The notes list's width in editor mode (the open note takes the rest). */
+export function useListWidth(origin: () => number) {
+  return useDividerWidth({
+    key: 'notes.listWidth',
+    min: LIST_MIN,
+    max: LIST_MAX,
+    initial: LIST_DEFAULT,
+    label: 'Resize note list',
+    origin,
+  })
 }

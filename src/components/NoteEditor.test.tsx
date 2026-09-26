@@ -49,9 +49,9 @@ beforeEach(async () => {
 })
 afterEach(() => cleanup())
 
-const editorView = (props: { embedded?: boolean; onClose?: () => void } = {}) => (
+const editorView = (props: { embedded?: boolean; onClose?: () => void; searchQuery?: string } = {}) => (
   <DialogProvider>
-    <NoteEditor id={noteId} onClose={props.onClose ?? (() => {})} embedded={props.embedded} />
+    <NoteEditor id={noteId} onClose={props.onClose ?? (() => {})} embedded={props.embedded} searchQuery={props.searchQuery} />
   </DialogProvider>
 )
 
@@ -392,6 +392,121 @@ describe('note editor', () => {
     await user.click(screen.getByRole('button', { name: /Close/ }))
     expect(onClose).toHaveBeenCalled()
     expect(back).not.toHaveBeenCalled()
+  })
+})
+
+describe('find in note', () => {
+  const marks = () => [...document.querySelectorAll('.note-content .search-hit')].map((m) => m.textContent)
+
+  beforeEach(async () => {
+    await repo.setNoteText(noteId, 'Draft', 'Apple pie, apple tart and APPLE crumble. Then cherries.')
+  })
+
+  it('opens already filled in, with the searched word marked in the text', async () => {
+    render(editorView({ searchQuery: 'apple' }))
+    await tiptap()
+    expect(screen.getByRole('searchbox', { name: 'Find in this note' })).toHaveProperty('value', 'apple')
+    await waitFor(() => expect(marks()).toEqual(['Apple', 'apple', 'APPLE']))
+    expect(screen.getByText('1 of 3')).toBeTruthy()
+    // The first match is the current one.
+    expect(document.querySelectorAll('.search-hit-current')).toHaveLength(1)
+  })
+
+  it('does not put the cursor in the find box on its own (a phone keyboard would pop up)', async () => {
+    render(editorView({ searchQuery: 'apple' }))
+    await tiptap()
+    expect(document.activeElement).not.toBe(screen.getByRole('searchbox', { name: 'Find in this note' }))
+  })
+
+  it('is closed, with nothing marked, when nothing was searched for', async () => {
+    render(editorView())
+    await tiptap()
+    expect(screen.queryByRole('searchbox', { name: 'Find in this note' })).toBeNull()
+    expect(marks()).toEqual([])
+  })
+
+  it('opens from the Find button, finds as you type, and steps through the matches', async () => {
+    const user = userEvent.setup()
+    render(editorView())
+    await tiptap()
+    await user.click(screen.getByRole('button', { name: 'Find in note' }))
+    const box = await screen.findByRole('searchbox', { name: 'Find in this note' })
+    await waitFor(() => expect(document.activeElement).toBe(box))
+
+    await user.type(box, 'apple')
+    await waitFor(() => expect(marks()).toHaveLength(3))
+    expect(screen.getByText('1 of 3')).toBeTruthy()
+
+    await user.keyboard('{Enter}')
+    expect(await screen.findByText('2 of 3')).toBeTruthy()
+    await user.keyboard('{Shift>}{Enter}{/Shift}')
+    expect(await screen.findByText('1 of 3')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Previous match' })) // wraps round
+    expect(await screen.findByText('3 of 3')).toBeTruthy()
+  })
+
+  it('opens with Ctrl+F, and says when nothing matches', async () => {
+    const user = userEvent.setup()
+    render(editorView())
+    await tiptap()
+    await user.keyboard('{Control>}f{/Control}')
+    const box = await screen.findByRole('searchbox', { name: 'Find in this note' })
+    await user.type(box, 'zebra')
+    expect(await screen.findByText('No matches')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Next match' })).toHaveProperty('disabled', true)
+  })
+
+  it('Escape closes only the find bar and clears the marks; the note stays open', async () => {
+    const onClose = vi.fn()
+    const user = userEvent.setup()
+    render(editorView({ searchQuery: 'apple', onClose }))
+    await tiptap()
+    await waitFor(() => expect(marks()).toHaveLength(3))
+    await user.click(screen.getByRole('searchbox', { name: 'Find in this note' }))
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('searchbox', { name: 'Find in this note' })).toBeNull())
+    expect(marks()).toEqual([])
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('never writes the marks into the note', async () => {
+    render(editorView({ searchQuery: 'apple' }))
+    const editor = await tiptap()
+    await waitFor(() => expect(marks()).toHaveLength(3))
+    expect(JSON.stringify(editor.getJSON())).not.toContain('search-hit')
+    expect(editor.getHTML()).not.toContain('search-hit')
+    expect((await saved())?.contentText).toBe('Apple pie, apple tart and APPLE crumble. Then cherries.')
+  })
+
+  it('follows the list search while the note is open in the side panel', async () => {
+    const { rerender } = render(editorView({ embedded: true, searchQuery: 'apple' }))
+    await tiptap()
+    await waitFor(() => expect(marks()).toHaveLength(3))
+    rerender(editorView({ embedded: true, searchQuery: 'cherries' }))
+    await waitFor(() => expect(marks()).toEqual(['cherries']))
+  })
+
+  it('finds a word that is part bold, part plain', async () => {
+    const editor = await (async () => {
+      render(editorView({ searchQuery: 'crumble' }))
+      return tiptap()
+    })()
+    editor.commands.setContent(
+      {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: 'apple cru' },
+              { type: 'text', text: 'mble', marks: [{ type: 'bold' }] },
+            ],
+          },
+        ],
+      },
+      { emitUpdate: false },
+    )
+    await waitFor(() => expect(marks().join('')).toBe('crumble'))
   })
 })
 

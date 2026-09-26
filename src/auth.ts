@@ -29,7 +29,13 @@ function rememberSignedIn(value: boolean) {
  * verified device stays signed in while offline so the app opens without a connection.
  */
 export function useAuth() {
-  const [state, setState] = useState<AuthState>({ status: 'loading' })
+  // A device that was signed in opens straight onto its notes (they are stored on the device),
+  // and the server check happens in the background. Waiting for that check first would keep
+  // a phone on a blank "Loading…" screen for as long as the server (and its database) needs
+  // to wake up. If the server says the session ended, the sign-in screen appears then.
+  const [state, setState] = useState<AuthState>(() =>
+    wasSignedIn() ? { status: 'signedIn', defaultPin: false, hasRecovery: true } : { status: 'loading' },
+  )
 
   const verify = useCallback(async () => {
     try {

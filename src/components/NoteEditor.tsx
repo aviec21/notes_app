@@ -4,20 +4,42 @@ import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 
 import { createPortal } from 'react-dom'
 import type { DocJson, NoteRecord } from '../../shared/sync'
 import { noteExtensions } from '../editor/extensions'
+import { setSearchQuery } from '../editor/searchHighlight'
 import Toolbar from '../editor/Toolbar'
+import { useDragSelectAutoscroll, useKeepSelectionVisible, useKeyboardInset } from '../editor/viewport'
 import { useHotkeys } from '../hotkeys'
 import { useIsDesktop, useLibraryData } from '../hooks'
 import { compressImage, storeImage } from '../images'
 import { copyText } from '../lib/clipboard'
 import { noteToMarkdown } from '../lib/markdown'
+import { folderColorVar } from '../lib/folderColors'
+import { NOTE_WIDTH_CLASS, NOTE_WIDTH_IDS, NOTE_WIDTH_KEY } from '../lib/noteWidth'
+import { usePref } from '../prefs'
 import CopyMenu from './CopyMenu'
+import FindBar from './FindBar'
 import { effectiveFolderId, liveFolders } from '../lib/library'
 import { db, repo } from '../sync/runtime'
 import SyncStatus from './SyncStatus'
 import { useDialogs } from './ui/Dialogs'
-import { BackIcon, CloseIcon, PinIcon, TrashIcon } from './ui/Icons'
+import { BackIcon, CloseIcon, PinIcon, SearchIcon, TrashIcon } from './ui/Icons'
 
 const SAVE_DELAY_MS = 400
+
+/** Find-in-note state, owned by the editor screen (the header button and the bar share it). */
+interface FindState {
+  open: boolean
+  query: string
+  focusToken: number
+  setQuery: (query: string) => void
+  close: () => void
+}
+
+// Room to keep clear when the browser scrolls the caret into view: the sticky header above
+// (with the formatting bar too, on a computer) and, on a phone, the toolbar below the text.
+const SCROLL_MARGIN = {
+  desktop: { top: 140, bottom: 32, left: 5, right: 5 },
+  phone: { top: 72, bottom: 112, left: 5, right: 5 },
+} as const
 
 type Flush = () => Promise<void>
 
@@ -34,12 +56,16 @@ function Fields({
   flushRef,
   toolbarSlot,
   copySlot,
+  findSlot,
+  find,
   isDesktop,
 }: {
   note: NoteRecord
   flushRef: RefObject<Flush>
   toolbarSlot: HTMLElement | null
   copySlot: HTMLElement | null
+  findSlot: HTMLElement | null
+  find: FindState
   isDesktop: boolean
 }) {
   const [title, setTitle] = useState(note.title)
@@ -75,6 +101,8 @@ function Fields({
     shouldRerenderOnTransaction: false,
     editorProps: {
       attributes: { class: 'note-content', 'aria-label': 'Note text', role: 'textbox', 'aria-multiline': 'true' },
+      scrollMargin: isDesktop ? SCROLL_MARGIN.desktop : SCROLL_MARGIN.phone,
+      scrollThreshold: isDesktop ? SCROLL_MARGIN.desktop : SCROLL_MARGIN.phone,
       // Pictures pasted or dragged in are stored with the note, never linked from elsewhere.
       handlePaste: (_view, event) => {
         const files = [...(event.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'))
@@ -119,6 +147,22 @@ function Fields({
   useEffect(() => {
     flushRef.current = save
   }, [flushRef, save])
+
+  // Phone or computer can change while the note is open (rotating, resizing the window).
+  useEffect(() => {
+    const margin = isDesktop ? SCROLL_MARGIN.desktop : SCROLL_MARGIN.phone
+    editor?.setOptions({ editorProps: { ...editor.options.editorProps, scrollMargin: margin, scrollThreshold: margin } })
+  }, [editor, isDesktop])
+
+  // Words searched for are marked in the text (only on screen; the note itself is unchanged).
+  useEffect(() => {
+    if (editor) setSearchQuery(editor, find.open ? find.query : '')
+  }, [editor, find.open, find.query])
+
+  // Keep what you are writing or selecting clear of the keyboard, toolbar and header.
+  useKeyboardInset(!isDesktop)
+  useKeepSelectionVisible(editor, !isDesktop)
+  useDragSelectAutoscroll(editor, isDesktop)
 
   // Save when the tab is hidden or closed, and when leaving the editor.
   useEffect(() => {
@@ -191,6 +235,12 @@ function Fields({
         className="w-full bg-transparent text-2xl font-semibold outline-none"
       />
       {copySlot && createPortal(<CopyMenu editor={editor} title={title} />, copySlot)}
+      {findSlot &&
+        find.open &&
+        createPortal(
+          <FindBar editor={editor} query={find.query} onQuery={find.setQuery} onClose={find.close} focusToken={find.focusToken} />,
+          findSlot,
+        )}
       <EditorContent editor={editor} className="min-h-[50vh]" />
       <input
         ref={fileInput}
@@ -217,8 +267,12 @@ function Fields({
         ? toolbarSlot && createPortal(toolbar, toolbarSlot)
         : toolbar && (
             <div
-              className="fixed inset-x-0 bottom-0 z-20"
+              data-editor-bottom-bar
+              className="fixed inset-x-0 z-20"
               style={{
+                // Sits on top of the on-screen keyboard where the browser does not resize the
+                // page for it (see useKeyboardInset).
+                bottom: 'var(--kb-inset, 0px)',
                 background: 'var(--bg)',
                 borderTop: '1px solid var(--border)',
                 paddingBottom: 'env(safe-area-inset-bottom)',
@@ -291,14 +345,23 @@ function NoteMeta({ note, onOpenTag }: { note: NoteRecord; onOpenTag?: (tagId: s
       </button>
 
       {noteTags.map((tag) => (
-        <span key={tag.id} className="flex items-center gap-1 rounded-full py-0.5 pr-1 pl-1" style={{ border: '1px solid var(--border)' }}>
+        <span
+          key={tag.id}
+          className="flex items-center gap-1 rounded-full py-0.5 pr-1 pl-1"
+          style={{
+            border: `1px solid ${folderColorVar(tag.color) ? `color-mix(in srgb, ${folderColorVar(tag.color)} 60%, var(--border))` : 'var(--border)'}`,
+          }}
+        >
           <button
             type="button"
             onClick={() => onOpenTag?.(tag.id)}
             disabled={!onOpenTag}
             title={onOpenTag ? `Show all notes tagged #${tag.name}` : undefined}
-            className="rounded-full px-1.5 disabled:cursor-default"
+            className="flex items-center gap-1.5 rounded-full px-1.5 disabled:cursor-default"
           >
+            {folderColorVar(tag.color) && (
+              <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: folderColorVar(tag.color) }} />
+            )}
             #{tag.name}
           </button>
           <button
@@ -362,12 +425,15 @@ export default function NoteEditor({
   onClose,
   embedded = false,
   onOpenTag,
+  searchQuery = '',
 }: {
   id: string
   onClose: () => void
   embedded?: boolean
   /** Opens the tag's page (clicking a tag chip on the note). */
   onOpenTag?: (tagId: string) => void
+  /** What is typed in the notes list's search box: opens the find bar with it, marked in the text. */
+  searchQuery?: string
 }) {
   const dialogs = useDialogs()
   // undefined while loading, null if the note no longer exists.
@@ -377,6 +443,33 @@ export default function NoteEditor({
   const isDesktop = useIsDesktop()
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null)
   const [copySlot, setCopySlot] = useState<HTMLDivElement | null>(null)
+  const [findSlot, setFindSlot] = useState<HTMLDivElement | null>(null)
+  const [noteWidth] = usePref(NOTE_WIDTH_KEY, 'medium', NOTE_WIDTH_IDS)
+
+  // Find in note. A word searched for in the list opens it already filled in (without
+  // grabbing the keyboard, so a phone's keyboard does not pop up); Ctrl+F or the button opens
+  // it empty-handed and puts the cursor in it.
+  const [findOpen, setFindOpen] = useState(searchQuery.trim().length > 0)
+  const [findQuery, setFindQuery] = useState(searchQuery)
+  const [findFocus, setFindFocus] = useState(0)
+  const [seenSearch, setSeenSearch] = useState(searchQuery)
+  if (seenSearch !== searchQuery) {
+    // The list's search changed while this note is open (side panel): follow it.
+    setSeenSearch(searchQuery)
+    setFindQuery(searchQuery)
+    setFindOpen(searchQuery.trim().length > 0)
+  }
+  const openFind = () => {
+    setFindOpen(true)
+    setFindFocus((n) => n + 1)
+  }
+  const find: FindState = {
+    open: findOpen,
+    query: findQuery,
+    focusToken: findFocus,
+    setQuery: setFindQuery,
+    close: () => setFindOpen(false),
+  }
 
   // Full screen: the device's Back button (and the browser's) returns to the list.
   useEffect(() => {
@@ -414,12 +507,14 @@ export default function NoteEditor({
   useHotkeys([
     { keys: 'escape', run: close, inInput: true, when: inPane },
     { keys: 'mod+s', run: () => void flushRef.current(), inInput: true, when: inPane },
+    { keys: 'mod+f', run: openFind, inInput: true, when: inPane },
   ])
 
   const buttonClass = 'flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm'
   return (
-    <div ref={pane} className={`flex flex-col gap-3 pb-28 ${embedded ? '' : 'mx-auto max-w-3xl'}`}>
+    <div ref={pane} className={`flex flex-col gap-3 pb-28 ${embedded ? '' : `mx-auto ${NOTE_WIDTH_CLASS[noteWidth]}`}`}>
       <header
+        data-editor-header
         className="sticky top-0 z-10 -mx-4 flex flex-col px-4 md:-mx-6 md:px-6"
         style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}
       >
@@ -437,15 +532,42 @@ export default function NoteEditor({
           </button>
           <SyncStatus />
           <div ref={setCopySlot} />
-          <button type="button" onClick={() => void trash()} className={buttonClass} style={{ border: '1px solid var(--border)', color: 'var(--danger)' }}>
-            <TrashIcon /> Delete
+          <button
+            type="button"
+            onClick={() => (findOpen ? find.close() : openFind())}
+            aria-label="Find in note"
+            aria-pressed={findOpen}
+            title="Find in note (Ctrl+F)"
+            className={buttonClass}
+            style={findOpen ? { background: 'var(--accent)', color: 'var(--bg)' } : { border: '1px solid var(--border)' }}
+          >
+            <SearchIcon />
+          </button>
+          <button
+            type="button"
+            onClick={() => void trash()}
+            aria-label="Delete"
+            className={buttonClass}
+            style={{ border: '1px solid var(--border)', color: 'var(--danger)' }}
+          >
+            <TrashIcon /> <span className="hidden sm:inline">Delete</span>
           </button>
         </div>
         {isDesktop && <div ref={setToolbarSlot} className="-mx-1 pb-1" />}
+        <div ref={setFindSlot} />
       </header>
       {note?.id === id && <NoteMeta note={note} onOpenTag={onOpenTag} />}
       {note?.id === id && (
-        <Fields key={id} note={note} flushRef={flushRef} toolbarSlot={toolbarSlot} copySlot={copySlot} isDesktop={isDesktop} />
+        <Fields
+          key={id}
+          note={note}
+          flushRef={flushRef}
+          toolbarSlot={toolbarSlot}
+          copySlot={copySlot}
+          findSlot={findSlot}
+          find={find}
+          isDesktop={isDesktop}
+        />
       )}
     </div>
   )

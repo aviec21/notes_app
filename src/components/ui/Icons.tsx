@@ -37,8 +37,8 @@ export const PinIcon = ({ size = 16 }: { size?: number }) => (
     <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
   </Icon>
 )
-export const TagIcon = () => (
-  <Icon>
+export const TagIcon = ({ color }: { color?: string }) => (
+  <Icon color={color} tint>
     <path d="M20 12 12 20a2 2 0 0 1-3 0l-6-6a2 2 0 0 1 0-3L11 3h8a1 1 0 0 1 1 1z" />
     <circle cx="15.5" cy="8.5" r="1" />
   </Icon>
@@ -122,5 +122,68 @@ export const KeyboardIcon = () => (
 export const BackIcon = () => (
   <Icon>
     <path d="m15 18-6-6 6-6" />
+  </Icon>
+)
+export const ChevronDownIcon = ({ size = 16 }: { size?: number }) => (
+  <Icon size={size}>
+    <path d="m6 9 6 6 6-6" />
+  </Icon>
+)
+export const ChevronRightIcon = ({ size = 16 }: { size?: number }) => (
+  <Icon size={size}>
+    <path d="m9 6 6 6-6 6" />
+  </Icon>
+)
+export const ChevronUpIcon = ({ size = 16 }: { size?: number }) => (
+  <Icon size={size}>
+    <path d="m18 15-6-6-6 6" />
+  </Icon>
+)
+/** A panel with its left column shown: collapses or expands the sidebar. */
+export const SidebarIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+  </Icon>
+)
+export const SizeIcon = () => (
+  <Icon>
+    <rect x="3" y="3" width="8" height="8" rx="1.5" />
+    <rect x="13" y="3" width="8" height="8" rx="1.5" />
+    <rect x="3" y="13" width="18" height="8" rx="1.5" />
+  </Icon>
+)
+export const PencilIcon = () => (
+  <Icon>
+    <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+  </Icon>
+)
+export const FolderMoveIcon = () => (
+  <Icon>
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    <path d="M9 13h6m-2-2 2 2-2 2" />
+  </Icon>
+)
+export const PaletteIcon = () => (
+  <Icon>
+    <path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.9 1.5-1.9-.3-1 .4-2.1 1.5-2.1H17a4 4 0 0 0 4-4c0-5-4-10-9-10z" />
+    <circle cx="7.5" cy="11" r="1" />
+    <circle cx="10.5" cy="7" r="1" />
+    <circle cx="15.5" cy="7.5" r="1" />
+  </Icon>
+)
+export const DownloadIcon = () => (
+  <Icon>
+    <path d="M12 4v12m-4-4 4 4 4-4M4 20h16" />
+  </Icon>
+)
+export const RestoreIcon = () => (
+  <Icon>
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5" />
+  </Icon>
+)
+export const OpenIcon = () => (
+  <Icon>
+    <path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5" />
   </Icon>
 )

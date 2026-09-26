@@ -129,6 +129,10 @@ test('if the editor cannot be downloaded the app stays usable, with a message', 
   const a = await device()
   // Simulate the editor's code failing to arrive (a dropped connection on first use).
   await a.context.route(/NoteEditor-.*\.js/, (route) => route.abort())
+  // The app fetches the editor in the background once it is up, so start again with the
+  // download blocked: neither that attempt nor the one on first use can succeed.
+  await a.page.reload()
+  await expect(a.page.getByRole('searchbox', { name: 'Search notes' })).toBeVisible()
   const isPhone = await a.page.evaluate(() => matchMedia('(max-width: 767px)').matches)
   if (isPhone) await a.page.getByRole('button', { name: 'New note' }).click()
   else await a.page.getByRole('button', { name: /^Note$/ }).click()

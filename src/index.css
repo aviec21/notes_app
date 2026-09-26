@@ -24,6 +24,10 @@
   --folder-violet: #6741d9;
   --folder-pink: #c2255c;
   --folder-gray: #6b7280;
+  /* Sync status dot: green = synced, yellow = syncing or waiting to sync, red = a problem. */
+  --status-ok: #2b8a3e;
+  --status-busy: #e0a100;
+  --status-error: #d9362b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -47,6 +51,9 @@
     --folder-violet: #b197fc;
     --folder-pink: #f783ac;
     --folder-gray: #adb5bd;
+    --status-ok: #69db7c;
+    --status-busy: #ffd43b;
+    --status-error: #ff7b7b;
   }
 }
 
@@ -69,16 +76,36 @@
   --folder-violet: #b197fc;
   --folder-pink: #f783ac;
   --folder-gray: #adb5bd;
+  --status-ok: #69db7c;
+  --status-busy: #ffd43b;
+  --status-error: #ff7b7b;
 }
 
-/* A matched word in search results. Text stays in the normal text colour on a soft tint,
-   so contrast holds up in both themes. */
-mark.search-hit {
+/* The yellow "syncing" dot breathes gently, unless the person asked for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .sync-dot-pulse {
+    animation: sync-dot-pulse 1.2s ease-in-out infinite;
+  }
+}
+@keyframes sync-dot-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* A matched word in search results (in the list, and inside an open note). Text stays in
+   the normal text colour on a soft tint, so contrast holds up in both themes. */
+.search-hit {
   background: color-mix(in srgb, var(--accent) 28%, transparent);
   color: var(--text);
   border-radius: 3px;
   padding: 0 1px;
   font-weight: 600;
+}
+/* The match the find bar is on right now. */
+.search-hit-current {
+  background: color-mix(in srgb, var(--accent) 42%, transparent);
+  outline: 2px solid var(--accent);
 }
 
 /* Rich-text note body. The reset strips list and heading styles, so they are restored here.

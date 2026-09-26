@@ -1,9 +1,10 @@
-﻿import { useEffect, useRef, type MouseEvent, type PointerEvent } from 'react'
+import { useEffect, useRef, type MouseEvent, type PointerEvent } from 'react'
 import type { TagRecord } from '../../shared/sync'
+import { GRID_LOOK, LINE_CLAMP, LIST_LOOK, PREVIEW_CHARS, type CardSize } from '../lib/cardSize'
 import { folderColorVar } from '../lib/folderColors'
 import { snippetAround, type Item } from '../lib/library'
 import Highlight from './Highlight'
-import { FolderIcon, PinIcon } from './ui/Icons'
+import { FolderIcon, MoreIcon, PinIcon } from './ui/Icons'
 
 function formatWhen(ms: number): string {
   const date = new Date(ms)
@@ -17,6 +18,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 interface Props {
   item: Item
   mode: 'list' | 'grid'
+  size?: CardSize
   selected: boolean
   /** Whether the checkbox is shown (always on desktop; only while selecting on mobile). */
   showCheckbox: boolean
@@ -30,13 +32,35 @@ interface Props {
   onToggle: () => void
   /** Touch-and-hold (phones): starts selecting, like the Select button. */
   onLongPress?: () => void
+  /** Opens the card's ⋯ menu (Rename, Move, ...) beside the button. Omitted: no ⋯ button. */
+  onMenu?: (anchor: DOMRect) => void
 }
 
 const LONG_PRESS_MS = 500
 const MOVE_TOLERANCE_PX = 10
 
+// Search excerpts are cut closer to the match on smaller cards.
+const SNIPPET_RADIUS = {
+  list: { small: 15, average: 20, big: 45 },
+  grid: { small: 20, average: 30, big: 60 },
+} as const
+
 /** One note or folder, as a row (list mode) or a card (grid mode). */
-export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggles, query, tags, active, onOpen, onToggle, onLongPress }: Props) {
+export default function ItemCard({
+  item,
+  mode,
+  size = 'average',
+  selected,
+  showCheckbox,
+  bodyToggles,
+  query,
+  tags,
+  active,
+  onOpen,
+  onToggle,
+  onLongPress,
+  onMenu,
+}: Props) {
   const press = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null)
   const cancelPress = () => {
     if (press.current) window.clearTimeout(press.current.timer)
@@ -70,11 +94,15 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
   const pinned = isNote ? item.note.pinned : item.folder.pinned
   const chips = isNote ? tags.filter((t) => item.note.tagIds.includes(t.id)) : []
 
+  const grid = mode === 'grid'
+  const look = (grid ? GRID_LOOK : LIST_LOOK)[size]
+  const radius = SNIPPET_RADIUS[mode][size]
+
   const detail = isNote
     ? query.trim()
-      ? // Cut close to the match so it stays in view on a narrow one-line row.
-        snippetAround(item.note.contentText, query, mode === 'grid' ? 30 : 20)
-      : item.note.contentText.trim().slice(0, 160) || 'No text'
+      ? // Cut close to the match so it stays in view on a narrow row.
+        snippetAround(item.note.contentText, query, radius)
+      : item.note.contentText.trim().slice(0, PREVIEW_CHARS[size]) || 'No text'
     : plural(item.noteCount, 'note')
   const when = isNote ? item.note.updatedAt : item.folder.updatedAt
   const meta = item.daysLeft !== undefined ? `${plural(item.daysLeft, 'day')} left` : formatWhen(when)
@@ -90,20 +118,27 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
     else onOpen()
   }
 
-
-  const grid = mode === 'grid'
   const shownChips = chips.slice(0, 2)
   const chipList = (
     <span className="flex min-w-0 shrink-0 items-center gap-1 overflow-hidden">
-      {shownChips.map((tag) => (
-        <span
-          key={tag.id}
-          className="max-w-24 truncate rounded-full px-2 text-xs leading-5"
-          style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}
-        >
-          #<Highlight text={tag.name} query={query.replace(/^#/, '')} />
-        </span>
-      ))}
+      {shownChips.map((tag) => {
+        const color = folderColorVar(tag.color)
+        return (
+          <span
+            key={tag.id}
+            className="flex max-w-24 items-center gap-1 rounded-full px-2 text-xs leading-5"
+            style={{
+              border: `1px solid ${color ? `color-mix(in srgb, ${color} 60%, var(--border))` : 'var(--border)'}`,
+              color: 'var(--muted)',
+            }}
+          >
+            {color && <span aria-hidden="true" data-tag-dot className="h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />}
+            <span className="truncate">
+              #<Highlight text={tag.name} query={query.replace(/^#/, '')} />
+            </span>
+          </span>
+        )
+      })}
       {chips.length > shownChips.length && (
         <span className="text-xs" style={{ color: 'var(--muted)' }}>
           +{chips.length - shownChips.length}
@@ -112,12 +147,15 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
     </span>
   )
 
+  const previewText = <Highlight text={detail} query={isNote ? query : ''} />
+
   // Every card is the same size in a given layout, so a page of notes reads as an even
   // grid or list no matter how long each note is. Only a short preview is ever shown.
   return (
     <div
       data-card={grid ? 'grid' : 'list'}
-      className={`relative overflow-hidden rounded-xl ${grid ? 'h-36' : 'h-[4.5rem]'}`}
+      data-size={size}
+      className={`relative overflow-hidden rounded-xl ${look.height}`}
       style={{
         background: 'var(--surface)',
         border: `1px solid ${selected || active ? 'var(--accent)' : 'var(--border)'}`,
@@ -140,7 +178,7 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
         onDoubleClick={(e) => e.preventDefault()}
         {...longPressHandlers}
         aria-current={active ? 'true' : undefined}
-        className={`flex h-full w-full flex-col rounded-xl py-3 pr-3 text-left select-none [-webkit-touch-callout:none] ${grid ? 'justify-start' : 'justify-center'} ${showCheckbox ? 'pl-10' : 'pl-3'}`}
+        className={`flex h-full w-full flex-col rounded-xl py-3 text-left select-none [-webkit-touch-callout:none] ${grid ? 'justify-start' : 'justify-center'} ${showCheckbox ? 'pl-10' : 'pl-3'} ${onMenu ? 'pr-11' : 'pr-3'}`}
       >
         <span className="flex w-full items-center gap-2">
           {!isNote && <FolderIcon color={folderColorVar(item.folder.color)} />}
@@ -161,10 +199,14 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
 
         {grid ? (
           <>
-            {/* At most two lines of preview. */}
-            <span className="mt-1 line-clamp-2 min-h-10 w-full text-sm leading-5 break-words" style={{ color: 'var(--muted)' }}>
-              <Highlight text={detail} query={isNote ? query : ''} />
-            </span>
+            {look.lines > 0 && (
+              <span
+                className={`mt-1 ${LINE_CLAMP[look.lines]} ${look.previewBox} w-full text-sm leading-5 break-words`}
+                style={{ color: 'var(--muted)' }}
+              >
+                {previewText}
+              </span>
+            )}
             <span className="mt-auto flex w-full items-center justify-between gap-2">
               {chipList}
               <span className="shrink-0 text-xs" style={{ color: 'var(--muted)' }}>
@@ -173,15 +215,33 @@ export default function ItemCard({ item, mode, selected, showCheckbox, bodyToggl
             </span>
           </>
         ) : (
-          <span className="mt-0.5 flex w-full items-center gap-2">
-            {/* One line of preview, with any tags to its right. */}
-            <span className="min-w-0 flex-1 truncate text-sm" style={{ color: 'var(--muted)' }}>
-              <Highlight text={detail} query={isNote ? query : ''} />
+          look.lines > 0 && (
+            <span className="mt-0.5 flex w-full items-center gap-2">
+              {/* A preview of the text (one line, or two on big cards), with any tags to its right. */}
+              <span
+                className={`min-w-0 flex-1 text-sm ${look.lines === 1 ? 'truncate' : `${LINE_CLAMP[look.lines]} ${look.previewBox} break-words`}`}
+                style={{ color: 'var(--muted)' }}
+              >
+                {previewText}
+              </span>
+              {chipList}
             </span>
-            {chipList}
-          </span>
+          )
         )}
       </button>
+
+      {onMenu && (
+        <button
+          type="button"
+          onClick={(e) => onMenu(e.currentTarget.getBoundingClientRect())}
+          aria-label={`Options for ${title}`}
+          aria-haspopup="menu"
+          title="Options"
+          className={`absolute right-1.5 z-10 flex h-9 w-9 items-center justify-center rounded-lg ${grid ? 'top-2' : 'top-1/2 -translate-y-1/2'}`}
+        >
+          <MoreIcon />
+        </button>
+      )}
     </div>
   )
 }
