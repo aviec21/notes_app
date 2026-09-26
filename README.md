@@ -49,4 +49,16 @@ npm run lint
 
 ## Status
 
-Phase 1 (setup): scaffold, PWA shell, theme tokens, `/api/health`.
+Feature-complete and in daily use: notes, folders, tags (with colours), recycle bin, rich-text
+editor, offline-first sync, PIN sign-in with recovery code, export. See
+[CHANGELOG.md](CHANGELOG.md) for what changed in each version (`v1.1.0` is the latest).
+
+## Working on this project
+
+- **One change per commit**, with a message saying what changed and (in the body) why. Avoid
+  bundling unrelated features: a small commit can be understood, reverted or bisected on its own.
+- **Bigger work goes on a branch** (`git switch -c feature/short-name`) and is merged through a
+  pull request; Vercel builds a preview of the branch before anything reaches `main`.
+- **Every deployed version gets a tag** (`git tag -a v1.2.0 -m "…"` then `git push --tags`) and
+  a `CHANGELOG.md` entry, so it is easy to find and restore.
+- Before pushing: `npm test`, `npx tsc -b`, and (for UI changes) `npm run test:e2e`.
